@@ -55,6 +55,8 @@ magpie 会把插件 `loader` 返回的选项交给**同一个 host 里所有插�
 ## 插件不做什么
 
 - 不把令牌、密钥或响应内容写入日志：错误信息只带主机、状态码和截断后的响应体；
+- 失败诊断另存为 `~/.config/magpie/packycode-failures.jsonl`（模型、分组、状态码、原因、令牌名），
+  不含密钥、请求头或请求体，权限 `0600`，上限 256 KB；
 - 不读取你的对话内容；学习倍率用的请求日志只取 `group` / `model_name` / `other.group_ratio`；
 - 不向 PackyAPI 之外的任何服务发送数据（没有遥测、没有统计上报）；
 - 没有运行时依赖，也没有 postinstall 脚本。

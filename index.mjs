@@ -25,6 +25,7 @@ import { World } from "./src/world.mjs"
 import { classify, modelOf, signInError } from "./src/request.mjs"
 import { usageOf } from "./src/usage.mjs"
 import { log, optionsOf } from "./src/options.mjs"
+import { noteFailure } from "./src/diag.mjs"
 
 const ID = "packycode"
 const CHAT = "@ai-sdk/openai-compatible"
@@ -279,6 +280,7 @@ async function fetchOn(input, world, url, init) {
         lastWhy = e?.message ?? String(e)
         if (a < attempts - 1) continue
         note(state, cand, model, 20_000)
+        noteFailure(world.dir, { model, group: label(cand), key: cand.key.name || "manual", error: lastWhy })
         log(input, "warn", `PackyAPI: ${label(cand)} could not be reached for ${model} (${lastWhy}); resting it 20s and asking the next group`)
         continue ask
       }
@@ -299,6 +301,7 @@ async function fetchOn(input, world, url, init) {
       // the fallback to a dearer group must be visible: a minute of it, not
       // five, and a line in magpie's log saying why
       const rest = Math.round((verdict.cool || 30_000) / 1000)
+      noteFailure(world.dir, { model, group: label(cand), key: cand.key.name || "manual", status: res.status, why: lastWhy, rest })
       log(input, "warn", `PackyAPI: ${label(cand)} answered ${res.status} for ${model} (${lastWhy}); resting it ${rest}s and asking the next group`)
       continue ask
     }

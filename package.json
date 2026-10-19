@@ -1,6 +1,6 @@
 {
   "name": "magpie-packycode",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "PackyAPI (packyapi.com / packycode) as a magpie provider: each request goes out on the cheapest token group that is working, with automatic failover and a balance/spend card",
   "type": "module",
   "main": "./index.mjs",

@@ -1,5 +1,8 @@
 import { test, afterEach } from "node:test"
 import assert from "node:assert/strict"
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
 
 import { PackycodeAuthPlugin, _internal } from "../index.mjs"
 import { classify, modelOf } from "../src/request.mjs"
@@ -9,10 +12,12 @@ import { fakePackyAPI, routeFetchTo } from "./fake.mjs"
 
 const realFetch = globalThis.fetch
 const fakes = []
+const dirs = []
 
 afterEach(async () => {
   globalThis.fetch = realFetch
   for (const f of fakes.splice(0)) await f.close().catch(() => {})
+  for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true })
   _internal.reset() // group rests outlive a test's account otherwise
 })
 
@@ -21,12 +26,15 @@ async function setup(opts = {}) {
   fakes.push(fake)
   const { port } = await fake.listen()
   const logs = []
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "packycode-test-"))
+  dirs.push(dir)
   globalThis.fetch = routeFetchTo(port, realFetch)
   const plugin = await PackycodeAuthPlugin({
+    directory: dir,
     magpie: { options: () => opts.options ?? {} },
     client: { app: { log: (m) => logs.push(m) } },
   })
-  return { plugin, fake, logs }
+  return { plugin, fake, logs, dir }
 }
 
 const logText = (logs) => logs.map((m) => m?.body?.message ?? "").join("\n")
@@ -62,7 +70,7 @@ test("keys sign-in learns each key's groups, and the cheapest one serves", async
 })
 
 test("a group with no channel hands the request to the next one, and rests", async () => {
-  const { plugin, fake, logs } = await setup({
+  const { plugin, fake, logs, dir } = await setup({
     tokens: [
       { key: "sk-cheap-aaaaaaaaaaaaaaaaa", name: "c", group: "cheap" },
       { key: "sk-mid-bbbbbbbbbbbbbbbbbbb", name: "m", group: "mid" },
@@ -87,6 +95,19 @@ test("a group with no channel hands the request to the next one, and rests", asy
   // and the fallback says so in magpie's log, with how long the rest is
   const said = logs.map((m) => m?.body?.message ?? "").join("\n")
   assert.match(said, /resting it 60s and asking the next group/)
+
+  // and a line lands in the file a user can read after the fact
+  const lines = fs
+    .readFileSync(path.join(dir, "packycode-failures.jsonl"), "utf8")
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l))
+  assert.equal(lines.length, 1)
+  assert.equal(lines[0].group, "cheap")
+  assert.equal(lines[0].status, 503)
+  assert.match(lines[0].why, /无可用渠道/)
+  assert.ok(lines[0].key, "the token's name is there to tell keys of a group apart")
+  assert.ok(!JSON.stringify(lines[0]).includes("sk-"), "no key material in the file")
 })
 
 test("a cheap group that fails once is asked again before the dear one", async () => {

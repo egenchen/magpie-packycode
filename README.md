@@ -233,6 +233,12 @@ curl -s https://slb-v1.api.fan/v1/messages -H "authorization: Bearer sk-…" \
 
 ---
 
+## 排错记录在哪
+
+`~/.config/magpie/packycode-failures.jsonl`：**每次失败的尝试**一行（模型、分组、状态码、站方原因、
+休息多久、令牌名），没有密钥、请求头或请求体。出现「走了更贵的分组」时先看这个文件，能直接看到是哪个分组、
+什么状态码、为什么被休息。文件上限 256 KB，超出会重写。
+
 ## 学习记录在哪
 
 - `~/.config/magpie/packycode-groups.json`：见过的分组倍率（含已从价目表下架的分组），
@@ -244,7 +250,7 @@ curl -s https://slb-v1.api.fan/v1/messages -H "authorization: Bearer sk-…" \
 ## 开发与测试
 
 ```sh
-npm test                 # node --test，48 个用例，含一个假的 PackyAPI 服务器
+npm test                 # node --test，51 个用例，含一个假的 PackyAPI 服务器
 npm run prices           # 打印每个模型当前最便宜的分组与价格（按 picker 顺序）
 PACKY_TOKEN=… PACKY_USER=… npm run live          # 对真实 PackyAPI 的只读冒烟
 PACKY_TOKEN=… PACKY_USER=… LIVE_CALL=qwen3.7-flash npm run live:plugin   # 走插件自己的 fetch
