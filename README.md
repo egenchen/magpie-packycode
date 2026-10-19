@@ -269,6 +269,19 @@ DESIGN.md            调研结论、magpie 插件契约、备选方案与取舍
 
 ---
 
+### 维护者流程：让 magpie 只跑 GitHub 版
+
+本地改完、`npm test` 通过后，先推 GitHub，再让 magpie 安装/更新 **GitHub 版**；不要保留本地路径安装，
+否则两份插件会同时声明同一个 provider（magpie 只会让其中一份服务，行为难排查）：
+
+```sh
+npm test
+git push origin main
+magpie plugin rm /path/to/magpie-packycode 2>/dev/null   # 清掉本地路径安装（如果有）
+magpie plugin update                                     # 拉 GitHub 上的最新提交
+magpie plugin list                                       # 确认只剩 github:egenchen/magpie-packycode
+```
+
 ## 让 magpie 发现它
 
 三种入口，按投入从低到高：
