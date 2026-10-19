@@ -149,8 +149,11 @@ magpie plugin login packycode
    - 令牌里只要含受限分组（`cc`/`codex`/`codex-sale`）→ 整个令牌跳过（站方可能在任意分组上路由）；
    - 多分组令牌：价格按**最贵的那个分组**算（因为站方可能挑贵的），并排在单分组令牌之后。
 2. **健康**：`/api/perf-metrics?model=<模型>&hours=24` 给出每个分组 24h 成功率、TTFT、TPS；
-   低于阈值的分组先不用，插件自己看到的失败按 `令牌|模型` 冷却（无渠道 5 分钟、429 按
-   `Retry-After`、401/402 整令牌冷却）。
+   低于阈值的分组先不用，插件自己看到的失败按 `令牌|模型` 休息：无渠道/限流 **60 秒**
+   （429 按 `Retry-After`，最多 60 秒）、5xx 30 秒、401/402 整个令牌冷却。
+   休息时间刻意短：便宜分组一次抖动，不该让后面几分钟都落到贵几倍的分组上；
+   而且**最便宜的分组失败会先原地重试一次**（等 500ms），一次瞬时失败不必马上切走。
+   真的降级到更贵的分组时，magpie 日志里会有一条 `warn` 说明分组、状态码和休息时长。
 3. **排序**：价格（= 模型倍率 × 分组倍率）升序，同价时单分组令牌优先、成功率高的优先。
 4. **发送**：按顺序最多试 4 个令牌，只替换 `Authorization`，请求体原样（流式也原样）。
    - 无渠道 / 模型不存在 / 429 / 5xx / 401 → 换下一个；
@@ -207,7 +210,7 @@ magpie plugin login packycode
 | 登录后显示 “PackyAPI refused the system access token” | 令牌或用户 ID 不对；用户 ID 是个人设置页顶部的数字（如 1234）。 |
 | 模型列表比控制台少 | `magpie` 只暴露前 24 个（按家族排序的后半段）；或该模型所属分组当前无可用渠道（维护中）。 |
 | 请求报 “only on cc, codex…” | 该模型只在受限分组里；确认风险后打开 `include_restricted`。 |
-| 一直走贵的分组 | 该分组的 key 还没建（看选项 `manage_keys`），或该分组 `/v1/models` 为空（维护中）；也可能是分组已从价目表下架且日志里还没出现过（等插件跑一次学习，或发一次请求后再看）。 |
+| 一直走贵的分组 | 便宜分组刚失败过、正在休息（60 秒内会自己回来，magpie 日志有 `warn` 记录原因）；或该分组的 key 还没建（看选项 `manage_keys`）；或分组从价目表下架且日志里还没出现过。 |
 | 网关频繁 429 | 插件对 `/api/*` 有退避重试；仍频繁出现说明请求量超过了站方限制。 |
 
 调试用的真实接口：
@@ -241,7 +244,7 @@ curl -s https://slb-v1.api.fan/v1/messages -H "authorization: Bearer sk-…" \
 ## 开发与测试
 
 ```sh
-npm test                 # node --test，47 个用例，含一个假的 PackyAPI 服务器
+npm test                 # node --test，48 个用例，含一个假的 PackyAPI 服务器
 npm run prices           # 打印每个模型当前最便宜的分组与价格（按 picker 顺序）
 PACKY_TOKEN=… PACKY_USER=… npm run live          # 对真实 PackyAPI 的只读冒烟
 PACKY_TOKEN=… PACKY_USER=… LIVE_CALL=qwen3.7-flash npm run live:plugin   # 走插件自己的 fetch

@@ -250,37 +250,58 @@ async function fetchOn(input, world, url, init) {
   let sawAuth = false
   let lastWhy = ""
 
-  for (const cand of tries) {
-    if (init?.signal?.aborted) break
+  const send = (cand) => {
     const headers = new Headers(init?.headers ?? {})
     // the account's own key sits in the header the host filled in; this
     // request's group is the one that goes out
     headers.delete("x-api-key")
     headers.delete("x-goog-api-key")
     headers.set("authorization", `Bearer ${cand.key.key}`)
+    return fetch(url, { method: init?.method ?? "POST", headers, body, signal: init?.signal })
+  }
+  const label = (cand) => cand.group || cand.key.name || "a group"
 
-    let res
-    try {
-      res = await fetch(url, { method: init?.method ?? "POST", headers, body, signal: init?.signal })
-    } catch (e) {
-      if (init?.signal?.aborted) break
-      note(state, cand, model, 20_000)
-      lastWhy = e?.message ?? String(e)
-      continue
+  ask: for (let i = 0; i < tries.length; i++) {
+    const cand = tries[i]
+    // a blip on the cheapest group costs a moment's wait, not a request on a
+    // group several times dearer: that one is asked once more before the
+    // next group is
+    const attempts = i === 0 ? 2 : 1
+    for (let a = 0; a < attempts; a++) {
+      if (init?.signal?.aborted) break ask
+      if (a > 0) await new Promise((ok) => setTimeout(ok, 500))
+
+      let res
+      try {
+        res = await send(cand)
+      } catch (e) {
+        if (init?.signal?.aborted) break ask
+        lastWhy = e?.message ?? String(e)
+        if (a < attempts - 1) continue
+        note(state, cand, model, 20_000)
+        log(input, "warn", `PackyAPI: ${label(cand)} could not be reached for ${model} (${lastWhy}); resting it 20s and asking the next group`)
+        continue ask
+      }
+
+      if (res.ok) {
+        clear(state, cand, model)
+        return res
+      }
+
+      const text = await readText(res.clone(), 64 * 1024).catch(() => "")
+      const verdict = classify(res.status, text, res.headers)
+      lastWhy = verdict.why || `HTTP ${res.status}`
+      note(state, cand, model, verdict.cool || 30_000, verdict.whole)
+      if (res.status === 401) sawAuth = true
+      if (!verdict.retry) return res
+      last = res
+      if (a < attempts - 1) continue
+      // the fallback to a dearer group must be visible: a minute of it, not
+      // five, and a line in magpie's log saying why
+      const rest = Math.round((verdict.cool || 30_000) / 1000)
+      log(input, "warn", `PackyAPI: ${label(cand)} answered ${res.status} for ${model} (${lastWhy}); resting it ${rest}s and asking the next group`)
+      continue ask
     }
-
-    if (res.ok) {
-      clear(state, cand, model)
-      return res
-    }
-
-    const text = await readText(res.clone(), 64 * 1024).catch(() => "")
-    const verdict = classify(res.status, text, res.headers)
-    lastWhy = verdict.why || `HTTP ${res.status}`
-    note(state, cand, model, verdict.cool || 30_000, verdict.whole)
-    if (res.status === 401) sawAuth = true
-    if (!verdict.retry) return res
-    last = res
   }
 
   if (last) return last
@@ -332,4 +353,4 @@ function base(world) {
 }
 
 // for tests: an object, not a function, so magpie never calls it as a plugin
-export const _internal = { ID }
+export const _internal = { ID, reset: () => accountStates.clear() }

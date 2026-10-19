@@ -1,7 +1,7 @@
 import { test, afterEach } from "node:test"
 import assert from "node:assert/strict"
 
-import { PackycodeAuthPlugin } from "../index.mjs"
+import { PackycodeAuthPlugin, _internal } from "../index.mjs"
 import { classify, modelOf } from "../src/request.mjs"
 import { startOfDay } from "../src/usage.mjs"
 import { secs } from "../src/packyapi.mjs"
@@ -13,19 +13,23 @@ const fakes = []
 afterEach(async () => {
   globalThis.fetch = realFetch
   for (const f of fakes.splice(0)) await f.close().catch(() => {})
+  _internal.reset() // group rests outlive a test's account otherwise
 })
 
 async function setup(opts = {}) {
   const fake = fakePackyAPI(opts)
   fakes.push(fake)
   const { port } = await fake.listen()
+  const logs = []
   globalThis.fetch = routeFetchTo(port, realFetch)
   const plugin = await PackycodeAuthPlugin({
     magpie: { options: () => opts.options ?? {} },
-    client: { app: { log() {} } },
+    client: { app: { log: (m) => logs.push(m) } },
   })
-  return { plugin, fake }
+  return { plugin, fake, logs }
 }
+
+const logText = (logs) => logs.map((m) => m?.body?.message ?? "").join("\n")
 
 const call = async (hooks, auth, model) => {
   const loader = await hooks.auth.loader(async () => auth)
@@ -58,7 +62,7 @@ test("keys sign-in learns each key's groups, and the cheapest one serves", async
 })
 
 test("a group with no channel hands the request to the next one, and rests", async () => {
-  const { plugin, fake } = await setup({
+  const { plugin, fake, logs } = await setup({
     tokens: [
       { key: "sk-cheap-aaaaaaaaaaaaaaaaa", name: "c", group: "cheap" },
       { key: "sk-mid-bbbbbbbbbbbbbbbbbbb", name: "m", group: "mid" },
@@ -74,11 +78,35 @@ test("a group with no channel hands the request to the next one, and rests", asy
   const res = await call(plugin, auth, "claude-x")
   assert.equal(res.status, 200)
   const used = fake.state.requests.map((r) => r.key)
-  assert.deepEqual(used, ["sk-cheap-aaaaaaaaaaaaaaaaa", "sk-mid-bbbbbbbbbbbbbbbbbbb"])
+  // the cheapest group gets one more try before a dearer group is asked
+  assert.deepEqual(used, ["sk-cheap-aaaaaaaaaaaaaaaaa", "sk-cheap-aaaaaaaaaaaaaaaaa", "sk-mid-bbbbbbbbbbbbbbbbbbb"])
 
   // the failed group is resting: the next request starts on mid
   await call(plugin, auth, "claude-x")
   assert.equal(fake.state.requests.at(-1).key, "sk-mid-bbbbbbbbbbbbbbbbbbb")
+  // and the fallback says so in magpie's log, with how long the rest is
+  const said = logs.map((m) => m?.body?.message ?? "").join("\n")
+  assert.match(said, /resting it 60s and asking the next group/)
+})
+
+test("a cheap group that fails once is asked again before the dear one", async () => {
+  const { plugin, fake, logs } = await setup({
+    tokens: [
+      { key: "sk-cheap-aaaaaaaaaaaaaaaaa", name: "c", group: "cheap" },
+      { key: "sk-mid-bbbbbbbbbbbbbbbbbbb", name: "m", group: "mid" },
+    ],
+  })
+  const auth = { type: "api", key: "sk-cheap-aaaaaaaaaaaaaaaaa sk-mid-bbbbbbbbbbbbbbbbbbb", metadata: { mode: "keys", endpoint: "slb" } }
+  fake.fail("sk-cheap-aaaaaaaaaaaaaaaaa", { status: 429, times: 1 })
+
+  const res = await call(plugin, auth, "claude-x")
+  assert.equal(res.status, 200)
+  assert.deepEqual(
+    fake.state.requests.map((r) => r.key),
+    ["sk-cheap-aaaaaaaaaaaaaaaaa", "sk-cheap-aaaaaaaaaaaaaaaaa"],
+    "no request went to the dearer group",
+  )
+  assert.ok(!logText(logs).includes("asking the next group"))
 })
 
 test("a token spanning two groups is not preferred over a pinned one", async () => {
@@ -213,10 +241,14 @@ test("the failures that move on, and the ones that do not", () => {
   const noCh = classify(503, JSON.stringify({ error: { message: "分组 default 下模型 gpt-x 无可用渠道" } }))
   assert.equal(noCh.retry, true)
   assert.match(noCh.why, /无可用渠道/)
+  assert.equal(noCh.cool, 60_000, "a blip rests a group a minute, not five")
 
   const rate = classify(429, "{}", new Headers({ "retry-after": "7" }))
   assert.equal(rate.retry, true)
   assert.equal(rate.cool, 7000)
+
+  const longWait = classify(429, "{}", new Headers({ "retry-after": "3600" }))
+  assert.equal(longWait.cool, 60_000, "a long Retry-After is capped at a minute")
 
   const shape = classify(400, JSON.stringify({ error: { message: "invalid params: max_tokens" } }))
   assert.equal(shape.retry, false)

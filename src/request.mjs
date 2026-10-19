@@ -19,6 +19,11 @@ export function modelOf(url, body) {
  * a rate limit, a key out of credit or a channel that is down are worth
  * asking elsewhere; a request the relay turned away for its own shape is
  * not.
+ *
+ * A rest is kept short: the cheapest group failing once must not hand the
+ * next request to one several times dearer for minutes. A minute, or what
+ * the relay's Retry-After asks up to a minute, is enough for a blip; a group
+ * that is really down fails fast when it is asked again.
  */
 export function classify(status, text, headers) {
   const t = String(text ?? "")
@@ -28,10 +33,10 @@ export function classify(status, text, headers) {
   if (status >= 200 && status < 300) return { retry: false, why }
   if (status === 401 || status === 403) return { retry: true, cool: 10 * 60_000, whole: true, why }
   if (status === 402) return { retry: true, cool: 30 * 60_000, whole: true, why }
-  if (status === 404 || status === 410) return { retry: true, cool: 10 * 60_000, why }
-  if (noChannel) return { retry: true, cool: 5 * 60_000, why }
+  if (status === 404 || status === 410) return { retry: true, cool: 5 * 60_000, why }
+  if (noChannel) return { retry: true, cool: 60_000, why }
   if (status === 408 || status === 409 || status === 425 || status === 429) {
-    return { retry: true, cool: Math.min(retryAfter || 30_000, 5 * 60_000), why }
+    return { retry: true, cool: Math.min(retryAfter || 30_000, 60_000), why }
   }
   if (status >= 500) return { retry: true, cool: 30_000, why }
   // 400/422 and the rest: the request's own shape, every group would say no
