@@ -81,7 +81,7 @@ quota 单位 = 500000 / 美元
 | `auth.methods[].type = "api"` 时，key 输入框的标题取 **label**；`prompts` 在 key 之前问 | 系统访问令牌就放在 key 框里，用户 ID/线路用 prompts |
 | `authorize(inputs)` **拿不到 key**（key 在之后的 save 里合并） | 登录时无法校验令牌，只能等第一次 `provider.models` 校验并 `signIn:"expired"` 标记 |
 | `auth.options` 是开关（boolean），`input.magpie.options(id)` 实时读 | 四个开关：自动建 key / 受限分组 / 速度优先 / 健康检查 |
-| 插件 provider 的模型超过 24 个时，只默认暴露前 24 个给 agent | 文档里提示用户去 Providers 勾选 |
+| 插件 provider 的模型超过 24 个时，只默认暴露前 24 个给 agent | 插件按「家族 + 同族新模型在前」排序，让主力模型默认在这 24 个里；其余文档提示用户去 Providers 勾选 |
 | 模型 `limit` 留 0 时，magpie 会用自己 catalog 里的窗口补齐 | 实测 Claude/GPT/Qwen 窗口都对 |
 | 插件 id 与用户已有自定义 provider 重名时，插件变成 `<id>-plugin` | 删掉同名的自定义 provider 后，模型 id 就是 `packycode/...` |
 | 插件跑在 Bun 里，`process.cwd()` 是 magpie 配置目录；`input.directory` 也是它 | 学习结果写 `~/.config/magpie/packycode-groups.json` |

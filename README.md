@@ -185,8 +185,10 @@ magpie plugin login packycode
 1. **`cc` / `codex` / `codex-sale` 默认不用**。站方文档写明这三个分组只允许官方客户端，第三方接入
    会封号。要用请自己打开 `include_restricted`，风险自负。
 2. **多分组令牌价格不可控**。要“锁价”必须一个分组一个令牌；插件自动建的就是这种。
-3. **magpie 默认只向 agent 暴露前 24 个模型**（`manyModels`）。其余模型在
-   Providers → PackyAPI → 模型勾选里勾上即可，或 `magpie visible` 调整。
+3. **magpie 默认只向 agent 暴露前 24 个模型**（`manyModels`）。插件按
+   **家族分组、家族内新模型在前**排（Claude → GPT → Gemini → Grok → DeepSeek → Kimi →
+   Qwen → GLM → …），所以 Claude Opus 5.5、GPT-6.1-Sol 这类主力默认就在前 24 里；
+   其余模型在 Providers → PackyAPI → 模型勾选里勾上即可（`magpie provider models packycode +<模型>`）。
 4. **provider id 冲突**：如果本机已经有一个手写的 `packycode` 自定义 provider，插件会以
    `packycode-plugin` 出现（magpie 的规则：id 被占用的插件加 `-plugin` 后缀）。想让模型 id 统一成
    `packycode/...`，先在 Providers 里删掉旧的自定义 provider（`magpie provider rm packycode`），
@@ -203,7 +205,7 @@ magpie plugin login packycode
 | 现象 | 原因 / 处理 |
 | --- | --- |
 | 登录后显示 “PackyAPI refused the system access token” | 令牌或用户 ID 不对；用户 ID 是个人设置页顶部的数字（如 1234）。 |
-| 模型列表比控制台少 | `magpie` 只暴露前 24 个；或该模型所属分组当前无可用渠道（维护中）。 |
+| 模型列表比控制台少 | `magpie` 只暴露前 24 个（按家族排序的后半段）；或该模型所属分组当前无可用渠道（维护中）。 |
 | 请求报 “only on cc, codex…” | 该模型只在受限分组里；确认风险后打开 `include_restricted`。 |
 | 一直走贵的分组 | 该分组的 key 还没建（看选项 `manage_keys`），或该分组 `/v1/models` 为空（维护中）；也可能是分组已从价目表下架且日志里还没出现过（等插件跑一次学习，或发一次请求后再看）。 |
 | 网关频繁 429 | 插件对 `/api/*` 有退避重试；仍频繁出现说明请求量超过了站方限制。 |
@@ -239,8 +241,8 @@ curl -s https://slb-v1.api.fan/v1/messages -H "authorization: Bearer sk-…" \
 ## 开发与测试
 
 ```sh
-npm test                 # node --test，44 个用例，含一个假的 PackyAPI 服务器
-npm run prices           # 打印每个模型当前最便宜的分组与价格
+npm test                 # node --test，47 个用例，含一个假的 PackyAPI 服务器
+npm run prices           # 打印每个模型当前最便宜的分组与价格（按 picker 顺序）
 PACKY_TOKEN=… PACKY_USER=… npm run live          # 对真实 PackyAPI 的只读冒烟
 PACKY_TOKEN=… PACKY_USER=… LIVE_CALL=qwen3.7-flash npm run live:plugin   # 走插件自己的 fetch
 ```
@@ -253,7 +255,7 @@ src/pricing.mjs      /api/pricing 解析与价格换算
 src/packyapi.mjs     PackyAPI 客户端：控制台、令牌、/v1/models、/v1/messages
 src/world.mjs        账号状态：价目表、令牌、分组健康、自动建 key
 src/router.mjs       纯函数排序：可达 → 受限 → 健康 → 价格
-src/catalog.mjs      给 magpie 的模型列表（含各模型当前价格与显示名）
+src/catalog.mjs      给 magpie 的模型列表（含各模型当前价格、显示名与 picker 顺序）
 src/request.mjs      从请求里取模型、判别错误是否值得换分组
 src/usage.mjs        余额 / 今日花费 / 分组占比
 src/known.mjs        记住/学习分组倍率（含已下架分组）

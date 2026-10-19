@@ -15,8 +15,55 @@ import { orderFor } from "./router.mjs"
 const CHAT_ENDPOINTS = new Set(["anthropic", "openai", "openai-response"])
 const NO_DOWN = { keyed: new Map(), whole: new Map() }
 
+// magpie shows an agent the first 24 models a plugin lists (manyModels), and
+// takes them in this order: ours leads with the families most pickers look
+// for, each newest model first, so a flagship doesn't fall off the end of the
+// vendor's own price list — that list is ordered by neither family nor date.
+const FAMILY_ORDER = ["claude", "gpt", "gemini", "grok", "deepseek", "kimi", "qwen", "glm", "mimo", "minimax", "jev", "openai", "other"]
+const FAMILY_RANK = new Map(FAMILY_ORDER.map((f, i) => [f, i]))
+
+// 5.5 out of "claude-opus-5-5", 6.1 out of "gpt-6.1-sol", 3 out of "kimi-k3":
+// the first version in an id, read as numbers so 5.5 sorts above 4.10.
+function versionOf(id, family) {
+  const s = String(id).toLowerCase()
+  const rest = family && s.startsWith(family) ? s.slice(family.length) : s
+  const hit = rest.match(/\d+(?:[.-]\d+)*/)
+  return hit ? hit[0].split(/[.-]/).map((n) => Number(n)) : []
+}
+
+function byVersion(a, b) {
+  const n = Math.max(a.length, b.length)
+  for (let i = 0; i < n; i++) {
+    const x = a[i] ?? -1
+    const y = b[i] ?? -1
+    if (x !== y) return y - x
+  }
+  return 0
+}
+
+/**
+ * the order models go to a picker in: family groups (Claude, GPT, Gemini,
+ * then the rest), each family's newest models first, its flagship ahead of
+ * its smaller siblings at one version, then the vendor's order.
+ */
+export function pickerOrder(models) {
+  return models
+    .slice()
+    .sort((a, b) => {
+      const fa = FAMILY_RANK.get(a.family) ?? FAMILY_ORDER.length
+      const fb = FAMILY_RANK.get(b.family) ?? FAMILY_ORDER.length
+      if (fa !== fb) return fa - fb
+      const v = byVersion(versionOf(a.id, a.family), versionOf(b.id, b.family))
+      if (v) return v
+      const ra = a.ratio ?? 0
+      const rb = b.ratio ?? 0
+      if (ra !== rb) return rb - ra
+      return String(a.id).localeCompare(String(b.id))
+    })
+}
+
 export function buildCatalog({ pricing, keys = [], opts = {}, liveKnown = false, base = "" }) {
-  const out = {}
+  const fits = []
   for (const m of pricing.models.values()) {
     if (m.quotaType === 1) continue // per call: an image or a video, not a chat
     if (!(m.ratio > 0)) continue
@@ -41,6 +88,13 @@ export function buildCatalog({ pricing, keys = [], opts = {}, liveKnown = false,
 
     const price = group ? priceOf(pricing, m, group) : null
     const images = takesImages(m.family, m.id)
+    fits.push({ m, npm, price, images })
+  }
+
+  const out = {}
+  const byID = new Map(fits.map((f) => [f.m.id, f]))
+  for (const m of pickerOrder(fits.map((f) => f.m))) {
+    const { npm, price, images } = byID.get(m.id)
     out[m.id] = runtimeModel(m, { npm, price, images, base, name: prettyName(m.id, m.family) })
   }
   return out
