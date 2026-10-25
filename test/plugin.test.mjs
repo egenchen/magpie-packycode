@@ -204,6 +204,36 @@ test("no token is made when the user turns that off", async () => {
   assert.equal(fake.state.created.length, 0)
 })
 
+test("two listings at once do not make twin tokens", async () => {
+  const { plugin, fake } = await setup({
+    tokens: [{ key: "sk-pricey-cccccccccccccccc", name: "old", group: "pricey" }],
+    options: { manage_keys: true },
+  })
+  const auth = { type: "api", key: "tok-0123456789abcdef", metadata: { mode: "token", userID: "12345", endpoint: "slb" } }
+  await Promise.all([
+    plugin.provider.models({ models: {} }, { auth }),
+    plugin.provider.models({ models: {} }, { auth }),
+  ])
+  assert.deepEqual(
+    fake.state.created.map((t) => t.name).sort(),
+    ["magpie-cheap", "magpie-mid", "magpie-pricey"],
+    "one token per group, however many listings ran",
+  )
+})
+
+test("a token of the plugin's with no kept key is removed, not left as a twin", async () => {
+  const { plugin, fake } = await setup({
+    tokens: [
+      { key: "sk-pricey-cccccccccccccccc", name: "old", group: "pricey" },
+      { key: "sk-cheap-aaaaaaaaaaaaaaaaa", name: "magpie-cheap", group: "cheap" }, // keyless to the plugin
+    ],
+    options: { manage_keys: false },
+  })
+  const auth = { type: "api", key: "tok-0123456789abcdef", metadata: { mode: "token", userID: "12345", endpoint: "slb" } }
+  await plugin.provider.models({ models: {} }, { auth })
+  assert.deepEqual(fake.state.deleted.length, 1, "the token whose key cannot be known was removed")
+})
+
 test("the keys the plugin made are kept, so a restart needs no new tokens", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "packycode-test-"))
   dirs.push(dir)

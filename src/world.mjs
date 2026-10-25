@@ -49,6 +49,7 @@ export class World {
     this.created = new Map() // group → when a token was made, to not ask twice
     this.createFailed = new Map() // group → { until, why }
     this.keysCache = new Cache(5 * 60_000, () => this.ensureKeys())
+    this.provisioning = null // one round of token making at a time
     this.provisionEvery = 30 * 60_000
     this.provisionedAt = 0
   }
@@ -168,29 +169,52 @@ export class World {
     }
     if (dropped) saveMade(this.dir, this.made)
 
+    // a token of ours whose key was never kept (made before the relay hid
+    // keys, or by a round that raced this one) is one nobody can call: it
+    // goes, rather than being left behind as a dead twin
+    const keep = new Set(Object.values(this.made).map((r) => r.id))
+    for (const t of tokens ?? []) {
+      if (!String(t.name ?? "").startsWith(PREFIX) || keep.has(t.id)) continue
+      await this.api.deleteToken(t.id).catch(() => {})
+    }
+
     if (this.managesKeys && Date.now() - this.provisionedAt > this.provisionEvery) {
-      this.provisionedAt = Date.now()
-      const need = (await this.neededGroups()).slice(0, MAX_MADE_KEYS)
-      const missing = need.filter((n) => !keys.some((k) => k.groupMode === "single" && k.groups[0] === n.group))
-      // a few at a time: PackyAPI makes one token a call, and a burst of
-      // sixteen is a good way to meet its rate limit
-      for (let i = 0; i < missing.length; i += 4) {
-        const made = await Promise.all(
-          missing.slice(i, i + 4).map((n) =>
-            this.makeKeyFor(n.group, tokens).catch((e) => {
-              this.createFailed.set(n.group, { until: Date.now() + 30 * 60_000, why: e?.message ?? String(e) })
-              return null
-            }),
-          ),
-        )
-        keys.push(...made.filter(Boolean))
+      if (!this.provisioning) {
+        this.provisioning = this.provision(tokens)
+          .catch(() => [])
+          .finally(() => {
+            this.provisioning = null
+          })
       }
-      if (missing.length) this.tokensCache.reload().catch(() => {})
+      keys.push(...(await this.provisioning))
     }
     return keys
   }
 
+  async provision(tokens) {
+    this.provisionedAt = Date.now()
+    const need = (await this.neededGroups()).slice(0, MAX_MADE_KEYS)
+    const missing = need.filter((n) => !this.made[n.group])
+    const made = []
+    // a few at a time: PackyAPI makes one token a call, and a burst of
+    // sixteen is a good way to meet its rate limit
+    for (let i = 0; i < missing.length; i += 4) {
+      const got = await Promise.all(
+        missing.slice(i, i + 4).map((n) =>
+          this.makeKeyFor(n.group, tokens).catch((e) => {
+            this.createFailed.set(n.group, { until: Date.now() + 30 * 60_000, why: e?.message ?? String(e) })
+            return null
+          }),
+        ),
+      )
+      made.push(...got.filter(Boolean))
+    }
+    if (missing.length) this.tokensCache.reload().catch(() => {})
+    return made
+  }
+
   async makeKeyFor(group, tokens) {
+    if (this.made[group]) return null
     const failed = this.createFailed.get(group)
     if (failed && failed.until > Date.now()) return null
     // a token of this name whose key was never kept is one nobody can call
