@@ -112,8 +112,12 @@ export function fakePackyAPI({ tokens = [], live = LIVE, perf = {}, self = {}, u
     }
 
     if (name === "/api/token/search") {
+      // the relay stopped returning keys with the list (late Oct 2026): a key
+      // is readable once, in the create answer
       const kw = url.searchParams.get("keyword") ?? ""
-      const items = state.tokens.filter((t) => !kw || String(t.name).includes(kw))
+      const items = state.tokens
+        .filter((t) => !kw || String(t.name).includes(kw))
+        .map(({ key, ...rest }) => ({ ...rest, key_prefix: "sk", key_hint: String(key).slice(-8) }))
       return json(200, { data: { page: 1, page_size: 100, total: items.length, items }, success: true })
     }
 
@@ -134,7 +138,7 @@ export function fakePackyAPI({ tokens = [], live = LIVE, perf = {}, self = {}, u
       }
       state.tokens.push(t)
       state.created.push(t)
-      return json(200, { message: "", success: true })
+      return json(200, { data: { id: t.id, key: t.key }, message: "", success: true })
     }
 
     if (name.startsWith("/api/token/") && req.method === "DELETE") {

@@ -107,9 +107,9 @@ export async function PackycodeAuthPlugin(input) {
         {
           key: "manage_keys",
           label: "每个分组建一个令牌",
-          description: "给「最便宜/次便宜分组」自动建 magpie-<分组> 令牌，锁定每个分组的价格。关掉后只用你已有的令牌。",
-          default: false,
-          confirm: "会在你的 PackyAPI 账号里创建 magpie-<分组> 令牌（每个分组一个）。令牌免费创建，可随时在控制台删除。",
+          description: "给「最便宜/次便宜分组」建 magpie-<分组> 令牌并记住它的 key，锁定每个分组的价格。PackyAPI 现在不返回已有令牌的 key，系统令牌模式下关掉它就没有可用的 key 了。",
+          default: true,
+          confirm: "会在你的 PackyAPI 账号里创建 magpie-<分组> 令牌（每个分组一个），它们的 key 保存在本机 magpie 配置目录（仅自己可读）。令牌免费创建，可随时在控制台删除。",
         },
         {
           key: "include_restricted",
@@ -234,7 +234,13 @@ async function fetchOn(input, world, url, init) {
   } catch (e) {
     throw new Error(`PackyAPI: ${e?.message ?? e}`)
   }
-  if (!keys.length) throw new Error("PackyAPI: no key is set — sign in to PackyAPI (or paste API keys) in Providers")
+  if (!keys.length) {
+    throw new Error(
+      world.signedIn
+        ? "PackyAPI: the system access token cannot call a model by itself, and no token the plugin made is left — turn on \"每个分组建一个令牌\" in the provider's options, or sign in with API keys"
+        : "PackyAPI: no key is set — sign in to PackyAPI (or paste API keys) in Providers",
+    )
+  }
   // only the keys that could serve this model need their live list: the
   // price list already says which groups the model is sold in
   const fits = pricing?.models?.get(model)?.groups

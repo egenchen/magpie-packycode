@@ -10,6 +10,7 @@ import { Cache } from "./http.mjs"
 import { PackyAPI } from "./packyapi.mjs"
 import { parsePricing, multiplierOf, groupsByPrice } from "./pricing.mjs"
 import { allowedGroup, NON_CHAT } from "./groups.mjs"
+import { loadMade, saveMade } from "./keys.mjs"
 import { applyKnown, learnFromLogs, loadKnown, rememberPricing, saveKnown } from "./known.mjs"
 
 const PREFIX = "magpie-"
@@ -34,6 +35,7 @@ export class World {
     this.probed = new Map() // key → groups when metadata has none
     this.options = options ?? {}
     this.dir = dir || ""
+    this.made = loadMade(this.dir) // the keys of the tokens this plugin made
     this.known = loadKnown(this.dir)
     this.knownAt = 0
     this.learnedAt = 0
@@ -55,9 +57,13 @@ export class World {
     return this.api.signedIn
   }
 
-  /** tokens are only made when the user turned that on (magpie asks them first). */
+  /**
+   * Whether the plugin may make tokens. On by default: since PackyAPI stopped
+   * handing existing tokens' keys back, a sign-in with the system access token
+   * can only call models through tokens the plugin made itself.
+   */
   get managesKeys() {
-    return this.options.manage_keys === true && this.signedIn
+    return this.options.manage_keys !== false && this.signedIn
   }
 
   // ── the price list ────────────────────────────────────────────────────
@@ -138,11 +144,30 @@ export class World {
   }
 
   async ensureKeys() {
-    const tokens = await this.tokensCache.get()
-    let keys = tokens
-      .filter((t) => (t.status ?? 1) === 1 && !expired(t))
-      .map((t) => tokenKey(t))
-      .filter((k) => k.groups.length > 0)
+    const tokens = await this.tokensCache.get().catch(() => [])
+    const byID = new Map((tokens ?? []).map((t) => [t.id, t]))
+    const keys = []
+    let dropped = false
+    // a stored key is kept only while its token is still there, in that group
+    for (const [group, rec] of Object.entries(this.made)) {
+      const t = byID.get(rec.id)
+      const groups = t ? groupsOfToken(t) : []
+      if (!t || (t.status ?? 1) !== 1 || expired(t) || !groups.includes(group)) {
+        delete this.made[group]
+        dropped = true
+        continue
+      }
+      keys.push({
+        key: rec.key,
+        id: rec.id,
+        name: t.name ?? rec.name,
+        groups,
+        groupMode: groups.length > 1 ? "multi" : "single",
+        source: "made",
+      })
+    }
+    if (dropped) saveMade(this.dir, this.made)
+
     if (this.managesKeys && Date.now() - this.provisionedAt > this.provisionEvery) {
       this.provisionedAt = Date.now()
       const need = (await this.neededGroups()).slice(0, MAX_MADE_KEYS)
@@ -152,26 +177,34 @@ export class World {
       for (let i = 0; i < missing.length; i += 4) {
         const made = await Promise.all(
           missing.slice(i, i + 4).map((n) =>
-            this.makeKeyFor(n.group).catch((e) => {
+            this.makeKeyFor(n.group, tokens).catch((e) => {
               this.createFailed.set(n.group, { until: Date.now() + 30 * 60_000, why: e?.message ?? String(e) })
               return null
             }),
           ),
         )
-        keys = [...keys, ...made.filter(Boolean)]
+        keys.push(...made.filter(Boolean))
       }
       if (missing.length) this.tokensCache.reload().catch(() => {})
     }
     return keys
   }
 
-  async makeKeyFor(group) {
+  async makeKeyFor(group, tokens) {
     const failed = this.createFailed.get(group)
     if (failed && failed.until > Date.now()) return null
+    // a token of this name whose key was never kept is one nobody can call
+    // any more (the relay does not hand keys back), so it makes way for a new
+    // one of the same name rather than leaving a dead twin behind
+    const stale = (tokens ?? []).find((t) => t.name === PREFIX + group)
+    if (stale?.id) await this.api.deleteToken(stale.id).catch(() => {})
     const made = await this.api.createToken({ name: PREFIX + group, group })
     this.created.set(group, Date.now())
+    const name = made.name ?? PREFIX + group
+    this.made[group] = { id: made.id, key: made.key, name }
+    saveMade(this.dir, this.made)
     this.tokensCache.reload().catch(() => {})
-    return tokenKey(made)
+    return { key: made.key, id: made.id, name, groups: [group], groupMode: "single", source: "made" }
   }
 
   /**
@@ -268,18 +301,6 @@ export class World {
 }
 
 /** a token record as a key: its groups in the order PackyAPI keeps them. */
-function tokenKey(t) {
-  const groups = groupsOfToken(t)
-  return {
-    key: t.key,
-    id: t.id,
-    name: t.name ?? "",
-    groups,
-    groupMode: groups.length > 1 ? "multi" : "single",
-    source: "token",
-  }
-}
-
 function groupsOfToken(t) {
   if (t.group_mode === "multi" && t.groups) {
     try {

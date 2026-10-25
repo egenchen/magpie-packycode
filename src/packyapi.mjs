@@ -108,8 +108,13 @@ export class PackyAPI {
   }
 
   /** a token for one group, unlimited and never expiring; its key answers. */
+  /**
+   * Make a token and return it with its key. The create answer is the only
+   * place PackyAPI still shows a key (the list returns key_prefix/key_hint),
+   * so a token made without reading it here is a token nobody can use.
+   */
   async createToken({ name, group }) {
-    await this.#api("/api/token/", {
+    const made = await this.#api("/api/token/", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -123,15 +128,18 @@ export class PackyAPI {
         allow_ips: "",
       }),
     })
-    // the list is written after the insert, so ask again until the token
-    // it just made shows up
+    const key = made?.data?.key
+    if (typeof key === "string" && key.length >= 16) {
+      return { id: made.data.id, key, name }
+    }
+    // older answers named the token but not its key: the list had it
     for (let i = 0; i < 5; i++) {
       const r = await this.#api(`/api/token/search?p=0&size=20&keyword=${encodeURIComponent(name)}`)
       const found = (r?.data?.items ?? []).find((t) => t.name === name)
-      if (found) return found
+      if (found?.key) return found
       await new Promise((ok) => setTimeout(ok, 150))
     }
-    throw new Error(`PackyAPI made "${name}" but did not list it`)
+    throw new Error(`PackyAPI made "${name}" but answered without its key`)
   }
 
   async deleteToken(id) {

@@ -14,9 +14,16 @@
 | 系统访问令牌（推荐方式） | magpie 的 `~/.config/magpie/plugin-auth.json`，由 magpie 写入并掩码显示 | magpie 本身；插件通过 `getAuth()` 只在自身账号作用域内读取 |
 | API Key（另一种登录方式） | 同上（作为 sign-in 的 key） | 同上 |
 
-插件**不把任何密钥写进自己的文件**。它唯一写入的磁盘文件是
-`~/.config/magpie/packycode-groups.json`，内容只有分组倍率（数字），权限 `0600`；写入前会检查它
-不是符号链接。
+插件写入的磁盘文件只有三个，都在 magpie 配置目录，权限 `0600`，写入前都会检查不是符号链接：
+
+| 文件 | 内容 |
+| --- | --- |
+| `packycode-groups.json` | 分组倍率（数字），无密钥 |
+| `packycode-failures.jsonl` | 失败诊断（模型、分组、状态码、原因、令牌名），无密钥 |
+| `packycode-keys.json` | **插件自己创建的令牌的 API key**（2026-10 起站方不再返回已有令牌的 key，只能在创建时拿到） |
+
+`packycode-keys.json` 里的 key 与你在 magpie 里保存的 provider key 同级，只在本机可读；不要把它提交到
+仓库或同步到公开位置。
 
 ## 网络
 

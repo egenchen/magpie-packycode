@@ -110,9 +110,13 @@ magpie plugin login packycode
 登录后插件会：
 
 - 读价目表 `/api/pricing`（公开，不需要登录）；
-- 读你的令牌列表 `/api/token/search`；
-- 给「至少一个模型的最便宜/次便宜分组」补齐 `magpie-<分组>` 令牌（可在选项里一键关闭）；
+- 读你的令牌列表 `/api/token/search`（2026-10 起这个接口**不再返回完整 key**，只给 `key_prefix`/`key_hint`）；
+- 给「至少一个模型的最便宜/次便宜分组」建 `magpie-<分组>` 令牌，**在创建响应里拿到 key 并存到本机**
+  （`~/.config/magpie/packycode-keys.json`，权限 0600）——因为除创建那一刻，站方不再提供 key；
 - 用每个令牌的 `/v1/models` 确认该分组**当前**有哪些模型可用。
+
+> 所以系统访问令牌模式**必须**允许插件建令牌（选项 `manage_keys`，默认开）：你自己的旧令牌 key 站方已经不返回，
+> 插件没法用它们。想完全只用自己手里的 key，请用下面的「API Key」登录方式。
 
 ### 登录方式二：直接粘贴 API Key
 
@@ -131,7 +135,7 @@ magpie plugin login packycode
 
 | 选项（key） | 默认 | 作用 |
 | --- | --- | --- |
-| **每个分组建一个令牌** (`manage_keys`) | 关 | 自动创建 `magpie-<分组>` 令牌，锁定每个分组的价格。默认关（建令牌属于账号写入），打开时 magpie 会先确认。 |
+| **每个分组建一个令牌** (`manage_keys`) | 开 | 创建 `magpie-<分组>` 令牌并本地记住 key（站方不再返回已有 key，关掉它就没有 key 可用）。打开时 magpie 会先确认。 |
 | **允许使用受限分组** (`include_restricted`) | 关 | `cc` / `codex` / `codex-sale` 只允许官方客户端，站方明确说第三方接入会封号。默认排除。 |
 | **速度优先** (`prefer_speed`) | 关 | 关：最便宜优先；开：先看 24h 成功率和首字延迟，再看价格。 |
 | **跳过故障分组** (`check_performance`) | 开 | 成功率低于 88% 的分组在有别的选择时先不用；插件自己遇到的 429/无渠道错误也会让该分组冷却。 |
@@ -238,6 +242,12 @@ curl -s https://slb-v1.api.fan/v1/messages -H "authorization: Bearer sk-…" \
 `~/.config/magpie/packycode-failures.jsonl`：**每次失败的尝试**一行（模型、分组、状态码、站方原因、
 休息多久、令牌名），没有密钥、请求头或请求体。出现「走了更贵的分组」时先看这个文件，能直接看到是哪个分组、
 什么状态码、为什么被休息。文件上限 256 KB，超出会重写。
+
+## 本机记的 key
+
+`~/.config/magpie/packycode-keys.json`：插件自己创建的 `magpie-<分组>` 令牌和它们的 key（权限 0600，
+只在本机）。删掉它不会坏，插件会重新建令牌；令牌在控制台删掉后，插件下次也会自动补。这个文件里是**真实的
+API key**，和 magpie 保存你自己 provider key 的级别一样，注意不要提交到任何仓库。
 
 ## 学习记录在哪
 

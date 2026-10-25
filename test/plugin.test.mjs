@@ -26,8 +26,8 @@ async function setup(opts = {}) {
   fakes.push(fake)
   const { port } = await fake.listen()
   const logs = []
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "packycode-test-"))
-  dirs.push(dir)
+  const dir = opts.dir ?? fs.mkdtempSync(path.join(os.tmpdir(), "packycode-test-"))
+  if (!opts.dir) dirs.push(dir)
   globalThis.fetch = routeFetchTo(port, realFetch)
   const plugin = await PackycodeAuthPlugin({
     directory: dir,
@@ -158,9 +158,11 @@ test("with an access token, a token per needed group is made and used", async ()
   assert.deepEqual(Object.keys(models).sort(), ["claude-x", "gpt-x"])
   // the two cheapest pools claude-x is sold in, so a pool in maintenance
   // still leaves the next cheapest
+  // every key that can serve a model is one the plugin made: the relay no
+  // longer hands existing tokens' keys back
   assert.deepEqual(
     fake.state.created.map((t) => t.name).sort(),
-    ["magpie-cheap", "magpie-mid"],
+    ["magpie-cheap", "magpie-mid", "magpie-pricey"],
   )
 
   const res = await call(plugin, auth, "claude-x")
@@ -179,7 +181,7 @@ test("a managed key is not made again on the next listing", async () => {
   const made = fake.state.created.length
   await plugin.provider.models({ models: {} }, { auth })
   assert.equal(fake.state.created.length, made)
-  assert.equal(made, 2)
+  assert.equal(made, 3)
 })
 
 test("the restricted pools are off by default, and on with the switch", async () => {
@@ -193,13 +195,40 @@ test("the restricted pools are off by default, and on with the switch", async ()
   assert.ok(onModels["claude-only-cc"])
 })
 
-test("no token is made unless the user turns that on", async () => {
-  // creating credentials in someone's account is theirs to ask for: the
-  // switch is off by default and the editor asks before turning it on
-  const { plugin, fake } = await setup({ tokens: [{ key: "sk-pricey-cccccccccccccccc", name: "old", group: "pricey" }] })
+test("no token is made when the user turns that off", async () => {
+  // making credentials in someone's account is theirs to ask for: the switch
+  // is on by default only because the relay no longer hands existing keys back
+  const { plugin, fake } = await setup({ tokens: [{ key: "sk-pricey-cccccccccccccccc", name: "old", group: "pricey" }], options: { manage_keys: false } })
   const auth = { type: "api", key: "tok-0123456789abcdef", metadata: { mode: "token", userID: "12345", endpoint: "slb" } }
   await plugin.provider.models({ models: {} }, { auth })
   assert.equal(fake.state.created.length, 0)
+})
+
+test("the keys the plugin made are kept, so a restart needs no new tokens", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "packycode-test-"))
+  dirs.push(dir)
+  const tokens = [{ key: "sk-pricey-cccccccccccccccc", name: "old", group: "pricey" }]
+  const auth = { type: "api", key: "tok-0123456789abcdef", metadata: { mode: "token", userID: "12345", endpoint: "slb" } }
+
+  const first = await setup({ tokens, dir })
+  await first.plugin.provider.models({ models: {} }, { auth })
+  const made = first.fake.state.created.length
+  assert.equal(made, 3)
+  const cheapKey = first.fake.state.created.find((t) => t.group === "cheap").key
+
+  // a new plugin instance, as after a restart: same folder, same account,
+  // same server — the tokens it made are still there
+  const again = await PackycodeAuthPlugin({
+    directory: dir,
+    magpie: { options: () => ({}) },
+    client: { app: { log() {} } },
+  })
+  const models = await again.provider.models({ models: {} }, { auth })
+  assert.ok(models["claude-x"])
+  assert.equal(first.fake.state.created.length, made, "no token was made twice")
+  const res = await call(again, auth, "claude-x")
+  assert.equal(res.status, 200)
+  assert.equal(first.fake.state.requests.at(-1).key, cheapKey, "the kept key is the one used")
 })
 
 test("the sign-in's key never reaches the model", async () => {
