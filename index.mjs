@@ -134,10 +134,13 @@ export async function PackycodeAuthPlugin(input) {
       methods: [
         {
           type: "api",
-          // an "api" method's key field is titled by its label, so this is
-          // where the system access token goes
           label: "PackyAPI 系统访问令牌（推荐）",
           placeholder: "个人设置 → 安全设置 → 生成系统访问令牌",
+          // magpie 0.1.3659 起（host.js keyAsked）把「有 prompts 又有
+          // authorize」的 api 方法当成「令牌就在问题里」：它不再给 key
+          // 输入框，而是把 key="" 传进来、要 authorize 交回令牌。所以令牌
+          // 也作为一个问题来问（password，填的时候看不见），authorize 再把
+          // 它作为这次登录的 key 返回。
           prompts: [
             {
               type: "text",
@@ -147,15 +150,23 @@ export async function PackycodeAuthPlugin(input) {
               validate: (v) => (/^\d{2,20}$/.test(String(v ?? "").trim().replace(/^oidc_/, "")) ? undefined : "用户 ID 是数字"),
             },
             { type: "select", key: "endpoint", message: "接口线路", options: ENDPOINTS },
+            {
+              type: "password",
+              key: "token",
+              message: "系统访问令牌（个人设置 → 安全设置 → 生成系统访问令牌）",
+              placeholder: "粘贴整串令牌",
+              validate: (v) => (String(v ?? "").trim() ? undefined : "填入系统访问令牌"),
+            },
           ],
-          // the token itself arrives as the key, after the questions, so it
-          // is checked on the first listing rather than here
           async authorize(inputs) {
             const userID = String(inputs.userID ?? "").trim().replace(/^oidc_/, "")
+            const token = String(inputs.token ?? "").trim()
+            if (!token) return { type: "failed", error: "填入 PackyAPI 系统访问令牌" }
             // the token itself is the sign-in's key (auth.key); metadata
             // keeps only what is not secret, so it is not stored twice
             return {
               type: "success",
+              key: token,
               metadata: {
                 mode: "token",
                 userID,
@@ -169,9 +180,20 @@ export async function PackycodeAuthPlugin(input) {
           type: "api",
           label: "PackyAPI API Key（一个或多个）",
           placeholder: "sk-… 多个用空格或逗号分隔",
-          prompts: [{ type: "select", key: "endpoint", message: "接口线路", options: ENDPOINTS }],
+          prompts: [
+            { type: "select", key: "endpoint", message: "接口线路", options: ENDPOINTS },
+            {
+              type: "password",
+              key: "keys",
+              message: "PackyAPI API Key（一个或多个，空格或逗号分隔）",
+              placeholder: "sk-… sk-…",
+              validate: (v) => (String(v ?? "").trim() ? undefined : "填入 PackyAPI API Key"),
+            },
+          ],
           async authorize(inputs) {
-            return { type: "success", metadata: { mode: "keys", endpoint: inputs.endpoint || "slb" } }
+            const keys = String(inputs.keys ?? "").trim()
+            if (!keys) return { type: "failed", error: "填入 PackyAPI API Key" }
+            return { type: "success", key: keys, metadata: { mode: "keys", endpoint: inputs.endpoint || "slb" } }
           },
         },
       ],
