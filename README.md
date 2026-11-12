@@ -48,6 +48,14 @@ magpie plugin login packycode
 
 Tested on magpie 0.1.1246. Not affiliated with PackyAPI or magpie.
 
+The plugin options accept independent `config_endpoint` and `model_endpoint`
+URLs through `magpie plugin options magpie-packycode '<json>'`, so an existing
+sign-in can use `.ai` for console data and CF for models without signing in again.
+Both sign-in methods also offer the two
+selectors. Choose from `https://www.packyapi.ai`, `https://cf.api.fan` and
+`https://slb-v1.api.fan`. **CF is not recommended for configuration calls**: its
+`/api` endpoints currently return 404, although its `/v1` relay responds.
+
 ---
 
 ## 它解决什么
@@ -123,6 +131,63 @@ magpie plugin login packycode
 不想给系统访问令牌时，可以只粘贴一个或多个 `sk-...`（空格/逗号分隔）。插件会用一个不存在的模型
 去探测每个 key 绑定的分组（站方会回 `已选分组=[...]`，不花钱），然后照常选路。此模式**不能**自动建
 令牌、也读不到余额，只能按 key 的额度跑。
+
+### 分别选择配置调用接口和模型调用接口
+
+登录时可在两个下拉框里分别选择接口。已登录的账号无需重新登录，也可通过
+`magpie plugin options magpie-packycode '<JSON>'` 保存两个独立配置：
+
+```json
+{
+  "config_endpoint": "https://www.packyapi.ai",
+  "model_endpoint": "https://cf.api.fan",
+  "_comment": [
+    "config_endpoint 是配置调用接口；model_endpoint 是模型调用接口。可复制以下根地址替换对应值：",
+    "https://www.packyapi.ai",
+    "https://cf.api.fan",
+    "https://slb-v1.api.fan",
+    "CF 不建议用作配置调用接口：/api 目前返回 404；模型调用接口仍可选 CF。"
+  ]
+}
+```
+
+插件提供的 Options 示例已默认填写 `.ai` 配置接口和 CF 模型接口，并附可复制的地址说明。
+Options 是严格 JSON，不支持 `//` 或 `/* ... */` 注释，所以用 `_comment` 字段承载说明；
+插件只读取两个接口字段，忽略 `_comment`。可以保留或删除说明字段。
+
+例如：
+
+```sh
+magpie plugin options magpie-packycode '{"config_endpoint":"https://www.packyapi.ai","model_endpoint":"https://cf.api.fan"}'
+```
+
+当前 magpie 的 Provider“高级”和“插件选项”只接受宿主已有字段或布尔开关，插件无法在那里新增
+字符串或下拉框。上述配置使用 magpie 已有的插件 options 机制（插件工厂的第二个参数），
+登录下拉框使用已有的 select prompt；均不需要修改 magpie 本体。
+
+| 选项 | 用途 |
+| --- | --- |
+| **配置调用接口** (`config_endpoint`) | 价格表、分组、账号、令牌管理、性能数据和用量（`/api`） |
+| **模型调用接口** (`model_endpoint`) | 模型列表、模型调用、API Key 的计费查询与分组探测（`/v1`） |
+
+两个配置都允许选择以下地址，填写根地址即可，不要加 `/api` 或 `/v1`：
+
+| 地址 | 配置调用接口 | 模型调用接口 |
+| --- | --- | --- |
+| `https://www.packyapi.ai` | 可选 | 可选 |
+| `https://cf.api.fan` | **不建议选择**：目前配置接口返回 404 | 可选 |
+| `https://slb-v1.api.fan` | 可选；如返回空正文，可单独换配置接口 | 可选 |
+
+这些值也接受短名 `ai`、`cf`、`slb`。保存后对插件的全部账号生效；Options 中未指定的选项，
+沿用各账号登录时的设置。移除这两个选项可恢复账号自己的设置。
+
+两种登录方式也分别询问“模型调用接口”和“配置调用接口”；新的配置接口选择默认 `.ai`。
+升级不会改写已有账号：旧账号缺少独立配置接口时仍按旧逻辑取值（CF 的配置调用原先走 SLB），
+已有 `www` / `.com` 配置也继续兼容。要修复旧的 SLB 配置接口故障，请在 Options 中显式选择可用的地址。
+
+配置接口不可达、返回空正文或非 JSON 时，错误会标出主机和路径，提示修改“配置调用接口”。
+读取令牌列表失败会保留本地的分组 Key，不会把失败当成“令牌已删除”。接口可用性仍取决于站方；
+插件不会自动替换用户选择的地址。
 
 ---
 
@@ -213,6 +278,7 @@ magpie plugin login packycode
 | --- | --- |
 | 登录后显示 “PackyAPI refused the system access token” | 令牌或用户 ID 不对；用户 ID 是个人设置页顶部的数字（如 1234）。 |
 | 模型列表比控制台少 | `magpie` 只暴露前 24 个（按家族排序的后半段）；或该模型所属分组当前无可用渠道（维护中）。 |
+| `200 with an empty body` / 配置接口 404 | 在插件 Options 中修改 `config_endpoint`，无需修改 `model_endpoint`；CF 的配置接口不建议选择。 |
 | 请求报 “only on cc, codex…” | 该模型只在受限分组里；确认风险后打开 `include_restricted`。 |
 | 一直走贵的分组 | 便宜分组刚失败过、正在休息（60 秒内会自己回来，magpie 日志有 `warn` 记录原因）；或该分组的 key 还没建（看选项 `manage_keys`）；或分组从价目表下架且日志里还没出现过。 |
 | 网关频繁 429 | 插件对 `/api/*` 有退避重试；仍频繁出现说明请求量超过了站方限制。 |
@@ -260,10 +326,12 @@ API key**，和 magpie 保存你自己 provider key 的级别一样，注意不�
 ## 开发与测试
 
 ```sh
-npm test                 # node --test，51 个用例，含一个假的 PackyAPI 服务器
+npm test                 # node --test，含一个假的 PackyAPI 服务器
 npm run prices           # 打印每个模型当前最便宜的分组与价格（按 picker 顺序）
 PACKY_TOKEN=… PACKY_USER=… npm run live          # 对真实 PackyAPI 的只读冒烟
 PACKY_TOKEN=… PACKY_USER=… LIVE_CALL=qwen3.7-flash npm run live:plugin   # 走插件自己的 fetch
+# 配置接口和模型接口可单独选择；不填时沿用旧映射
+PACKY_ENDPOINT=cf PACKY_CONSOLE_ENDPOINT=ai npm run prices
 ```
 
 目录：

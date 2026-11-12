@@ -55,7 +55,7 @@ test("the loader hands out no credential", async () => {
 })
 
 test("only PackyAPI's hosts are ever contacted", () => {
-  const allowed = new Set(["slb-v1.api.fan", "cf.api.fan", "www.packyapi.com"])
+  const allowed = new Set(["slb-v1.api.fan", "cf.api.fan", "www.packyapi.ai", "www.packyapi.com"])
   const files = ["index.mjs", ...fs.readdirSync(path.join(root, "src")).filter((f) => f.endsWith(".mjs")).map((f) => path.join("src", f))]
   for (const f of files) {
     const text = fs.readFileSync(path.join(root, f), "utf8")
@@ -66,7 +66,8 @@ test("only PackyAPI's hosts are ever contacted", () => {
   }
   // anything else falls back to the default host rather than being fetched
   assert.equal(inferBase("elsewhere.example"), "https://slb-v1.api.fan")
-  assert.equal(consoleBase("cf"), "https://slb-v1.api.fan")
+  assert.equal(consoleBase("cf"), "https://cf.api.fan")
+  assert.equal(consoleBase(undefined, "cf"), "https://slb-v1.api.fan")
   assert.equal(consoleBase("nonsense"), "https://slb-v1.api.fan")
 })
 

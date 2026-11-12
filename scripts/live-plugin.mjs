@@ -9,6 +9,7 @@ import { PackycodeAuthPlugin } from "../index.mjs"
 const accessToken = process.env.PACKY_TOKEN
 const userID = process.env.PACKY_USER
 const endpoint = process.env.PACKY_ENDPOINT || "slb"
+const consoleEndpoint = process.env.PACKY_CONSOLE_ENDPOINT
 const model = process.env.LIVE_CALL || ""
 
 if (!accessToken || !userID) {
@@ -36,6 +37,7 @@ const auth = {
     accessToken,
     userID,
     endpoint,
+    consoleEndpoint,
     accountId: `packyapi-${userID}`,
     email: `packyapi-${userID}`,
     uid: Number(userID),

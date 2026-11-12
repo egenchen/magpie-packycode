@@ -12,7 +12,7 @@ import { parsePricing, groupsByPrice, priceOf } from "../src/pricing.mjs"
 import { RESTRICTED, NON_CHAT } from "../src/groups.mjs"
 
 const filter = (process.argv[2] || "").toLowerCase()
-const api = new PackyAPI({ endpoint: process.env.PACKY_ENDPOINT || "slb" })
+const api = new PackyAPI({ endpoint: process.env.PACKY_ENDPOINT || "slb", consoleEndpoint: process.env.PACKY_CONSOLE_ENDPOINT })
 const known = loadKnown(process.env.MAGPIE_DIR || path.join(os.homedir(), ".config", "magpie"))
 const pricing = applyKnown(parsePricing(await api.pricing()), known)
 

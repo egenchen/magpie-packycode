@@ -5,7 +5,7 @@
 // It prints what the plugin sees: groups, tokens, the catalog, and — with
 // LIVE_CALL=<model> — one tiny request through the real gateway path.
 
-import { PackyAPI } from "../src/packyapi.mjs"
+import { PackyAPI, inferBase } from "../src/packyapi.mjs"
 import { World } from "../src/world.mjs"
 import { buildCatalog } from "../src/catalog.mjs"
 import { orderFor } from "../src/router.mjs"
@@ -14,6 +14,7 @@ import { money, usdOf } from "../src/http.mjs"
 const accessToken = process.env.PACKY_TOKEN
 const userID = process.env.PACKY_USER
 const endpoint = process.env.PACKY_ENDPOINT || "slb"
+const consoleEndpoint = process.env.PACKY_CONSOLE_ENDPOINT
 const call = process.env.LIVE_CALL || ""
 
 if (!accessToken || !userID) {
@@ -21,9 +22,9 @@ if (!accessToken || !userID) {
   process.exit(1)
 }
 
-const auth = { type: "api", key: accessToken, metadata: { accessToken, userID, endpoint, accountId: "packyapi-live" } }
+const auth = { type: "api", key: accessToken, metadata: { accessToken, userID, endpoint, consoleEndpoint, accountId: "packyapi-live" } }
 const world = new World(auth, { manage_keys: process.env.MANAGE === "1" })
-const api = new PackyAPI({ endpoint, accessToken, userID })
+const api = new PackyAPI({ endpoint, consoleEndpoint, accessToken, userID })
 
 const t0 = Date.now()
 const pricing = await world.pricing()
@@ -65,7 +66,7 @@ if (call) {
   const first = cands.find((c) => !c.skip)
   if (!first) process.exit(2)
   const started = Date.now()
-  const res = await fetch(inferUrl(endpoint) + "/messages", {
+  const res = await fetch(inferBase(endpoint) + "/v1/messages", {
     method: "POST",
     headers: {
       authorization: `Bearer ${first.key.key}`,
@@ -76,8 +77,4 @@ if (call) {
   })
   const text = await res.text()
   console.log(`  → ${res.status} in ${Date.now() - started}ms via ${first.group}: ${text.slice(0, 300)}`)
-}
-
-function inferUrl(e) {
-  return e === "cf" ? "https://cf.api.fan/v1" : e === "www" ? "https://www.packyapi.com/v1" : "https://slb-v1.api.fan/v1"
 }

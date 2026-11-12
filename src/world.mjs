@@ -24,6 +24,7 @@ export class World {
     const md = this.auth.metadata ?? {}
     this.mode = md.mode || (md.accessToken ? "token" : "keys")
     this.endpoint = md.endpoint || "slb"
+    this.consoleEndpoint = md.consoleEndpoint
     // the sign-in's key is what magpie asked for: the system access token
     // in token mode, one or more API keys in keys mode
     // the sign-in's key is the system access token in token mode; metadata
@@ -39,7 +40,7 @@ export class World {
     this.known = loadKnown(this.dir)
     this.knownAt = 0
     this.learnedAt = 0
-    this.api = new PackyAPI({ endpoint: this.endpoint, accessToken: this.accessToken, userID: this.userID, fetchImpl })
+    this.api = new PackyAPI({ endpoint: this.endpoint, consoleEndpoint: this.consoleEndpoint, accessToken: this.accessToken, userID: this.userID, fetchImpl })
 
     this.pricingCache = new Cache(10 * 60_000, () => this.loadPricing())
     this.statusCache = new Cache(60 * 60_000, () => this.api.status())
@@ -145,7 +146,9 @@ export class World {
   }
 
   async ensureKeys() {
-    const tokens = await this.tokensCache.get().catch(() => [])
+    // A failed read says nothing about whether a saved token still exists.
+    // Let the caller report it, without discarding the only copy of a key.
+    const tokens = await this.tokensCache.get()
     const byID = new Map((tokens ?? []).map((t) => [t.id, t]))
     const keys = []
     let dropped = false

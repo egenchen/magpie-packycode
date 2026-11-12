@@ -2,32 +2,43 @@
 // and the numeric user id in New-Api-User) and the relay under /v1 (needs an
 // API key, which is a token bound to one or more groups).
 //
-// cf.api.fan serves only /v1; slb-v1.api.fan and www.packyapi.com serve
-// both. www.packyapi.ai answers /api with a Cloudflare block, so it is not
-// a console host here.
+// Relay and console hosts are chosen independently: a working /v1 does not
+// mean that /api works on the same host. Keep the old single-host mapping
+// only for sign-ins that predate the console selector.
 
 import { json } from "./http.mjs"
 
 const HOSTS = {
   slb: "https://slb-v1.api.fan",
   cf: "https://cf.api.fan",
+  ai: "https://www.packyapi.ai",
+  // Existing sign-ins may still name this host; it is not a new choice.
   www: "https://www.packyapi.com",
 }
 
 export const ENDPOINTS = [
-  { value: "slb", label: "优化线路 slb-v1.api.fan（推荐）" },
+  { value: "slb", label: "优化线路 slb-v1.api.fan" },
   { value: "cf", label: "全球 cf.api.fan" },
-  { value: "www", label: "主站 www.packyapi.com" },
+  { value: "ai", label: "主站 www.packyapi.ai" },
+]
+
+export const CONSOLE_ENDPOINTS = [
+  { value: "ai", label: "主站 www.packyapi.ai" },
+  { value: "slb", label: "优化线路 slb-v1.api.fan" },
+  { value: "cf", label: "全球 cf.api.fan（不建议选择）", hint: "配置接口目前返回 404，建议使用 .ai 或 SLB" },
 ]
 
 export function inferBase(endpoint) {
-  return HOSTS[endpoint] ?? HOSTS.slb
+  if (Object.hasOwn(HOSTS, endpoint)) return HOSTS[endpoint]
+  // The plugin's options accept complete URLs; sign-in prompts use
+  // short ids. Only these exact HTTPS origins (and a trailing /) are valid.
+  return Object.values(HOSTS).find((host) => endpoint === host || endpoint === host + "/") ?? HOSTS.slb
 }
 
-/** where the console API is: the same host, but cf has no console. */
-export function consoleBase(endpoint) {
-  const e = endpoint === "cf" ? "slb" : endpoint
-  return HOSTS[e] ?? HOSTS.slb
+/** Explicit console choices are used as given; missing ones retain legacy routing. */
+export function consoleBase(consoleEndpoint, endpoint = "slb") {
+  const legacy = inferBase(endpoint) === HOSTS.cf ? "slb" : endpoint
+  return inferBase(consoleEndpoint || legacy)
 }
 
 const ua = "magpie-packycode/0.1 (+magpie plugin)"
@@ -42,8 +53,9 @@ function consoleHeaders(accessToken, userID) {
 }
 
 export class PackyAPI {
-  constructor({ endpoint = "slb", accessToken = "", userID = "", fetchImpl } = {}) {
+  constructor({ endpoint = "slb", consoleEndpoint, accessToken = "", userID = "", fetchImpl } = {}) {
     this.endpoint = endpoint
+    this.consoleEndpoint = consoleEndpoint
     this.accessToken = accessToken
     this.userID = userID
     this.fetch = fetchImpl
@@ -55,7 +67,7 @@ export class PackyAPI {
   }
 
   get console() {
-    return consoleBase(this.endpoint)
+    return consoleBase(this.consoleEndpoint, this.endpoint)
   }
 
   get signedIn() {
@@ -64,27 +76,34 @@ export class PackyAPI {
 
   #api(path, opts = {}) {
     if (!this.signedIn) throw new Error("PackyAPI: no system access token")
-    return json(this.console + path, {
+    return this.#consoleJSON(path, {
       ...opts,
       headers: consoleHeaders(this.accessToken, this.userID),
-      fetchImpl: this.fetch,
     })
+  }
+
+  async #consoleJSON(path, opts = {}) {
+    try {
+      return await json(this.console + path, { ...opts, fetchImpl: this.fetch })
+    } catch (e) {
+      throw new Error(`${e?.message ?? e} (control API ${path.split("?")[0]}; change 「配置调用接口」 in the plugin settings)`, { cause: e })
+    }
   }
 
   // ── public: no sign-in ────────────────────────────────────────────────
 
   status() {
-    return json(`${this.console}/api/status`, { fetchImpl: this.fetch, timeout: 15000 })
+    return this.#consoleJSON("/api/status", { timeout: 15000 })
   }
 
   pricing() {
-    return json(`${this.console}/api/pricing`, { fetchImpl: this.fetch, timeout: 20000 })
+    return this.#consoleJSON("/api/pricing", { timeout: 20000 })
   }
 
   /** one model's live numbers per group: success rate, TTFT, latency, TPS. */
   perf(model, hours = 24) {
     const q = new URLSearchParams({ model: String(model), hours: String(hours) })
-    return json(`${this.console}/api/perf-metrics?${q}`, { fetchImpl: this.fetch, timeout: 15000 })
+    return this.#consoleJSON(`/api/perf-metrics?${q}`, { timeout: 15000 })
   }
 
   // ── the account ───────────────────────────────────────────────────────
