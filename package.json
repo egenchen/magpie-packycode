@@ -51,6 +51,7 @@
         "https://www.packyapi.ai",
         "https://cf.api.fan",
         "https://slb-v1.api.fan",
+        "https://www.packyapi.com",
         "CF 的配置接口目前返回 404，不建议作为 config_endpoint；可作为 model_endpoint。",
         "_comment 仅为说明，插件忽略它。未保存这些选项时仍沿用已有账号的接口设置。"
       ]

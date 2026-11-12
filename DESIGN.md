@@ -40,11 +40,11 @@ GET  /v1/dashboard/billing/usage          需要 API key；账号级花费（美
 | `cf.api.fan` | ✅ | ❌ 404 | 全球推理 |
 | `slb-v1.api.fan` | ✅ | 曾可用；2026-11-13 公开接口返回 200 空正文 | 旧登录的默认线路 |
 | `www.packyapi.ai` | ✅ | 2026-11-13 状态和价格表接口正常 | 新登录的默认配置线路 |
-| `www.packyapi.com` | ✅ | 保留原有映射 | 仅兼容已有登录，不再列为新选项 |
+| `www.packyapi.com` | 带 Key 的 `/v1/models` 正常 | 状态、价格表、账号接口正常 | 2026-11-13 验证后纳入可选项 |
 
 接口支持情况会变化，旧的“`.ai` 的 `/api` 被 WAF 拦截”结论不再用于限制选择。
 两种登录方式都提供“模型调用接口” (`metadata.endpoint`) 和“配置调用接口”
-(`metadata.consoleEndpoint`) 两个独立选择，选项均为 `.ai`、CF、SLB；CF 的配置选项
+(`metadata.consoleEndpoint`) 两个独立选择，选项均为 `.ai`、CF、SLB、`.com`；CF 的配置选项
 标注“不建议选择”，显式选择仍按用户指定的地址调用，不改回 SLB。
 
 已登录账号可从插件 Options 配置 `model_endpoint` / `config_endpoint`（根 URL 或短名）。

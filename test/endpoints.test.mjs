@@ -14,7 +14,7 @@ test("both sign-in methods keep two independent endpoint choices", async () => {
     for (const key of ["endpoint", "consoleEndpoint"]) {
       const prompt = method.prompts.find((p) => p.key === key)
       assert.equal(prompt.type, "select")
-      assert.deepEqual(prompt.options.map((o) => o.value).sort(), ["ai", "cf", "slb"])
+      assert.deepEqual(prompt.options.map((o) => o.value).sort(), ["ai", "cf", "slb", "www"])
       if (key === "consoleEndpoint") assert.match(prompt.options.find((o) => o.value === "cf").label, /不建议选择/)
     }
     const signed = await method.authorize({ userID: "12345", endpoint: "cf", consoleEndpoint: "ai" })
@@ -34,8 +34,8 @@ test("the provider config and loader agree with the selected model endpoint", as
   assert.equal(loader.baseURL, config.provider.packycode.api)
 })
 
-for (const endpoint of ["ai", "cf", "slb"]) {
-  for (const consoleEndpoint of ["ai", "cf", "slb"]) {
+for (const endpoint of ["ai", "cf", "slb", "www"]) {
+  for (const consoleEndpoint of ["ai", "cf", "slb", "www"]) {
     test(`relay ${endpoint} and console ${consoleEndpoint} route their own API calls`, async () => {
       const seen = []
       const api = new PackyAPI({
@@ -89,8 +89,8 @@ test("older sign-ins retain their routing until the user chooses endpoints", () 
   }
 })
 
-test("the Options editor accepts only known full origins or short ids", () => {
-  for (const [id, origin] of [["ai", "https://www.packyapi.ai"], ["cf", "https://cf.api.fan"], ["slb", "https://slb-v1.api.fan"]]) {
+test("the Options values accept only known full origins or short ids", () => {
+  for (const [id, origin] of [["ai", "https://www.packyapi.ai"], ["cf", "https://cf.api.fan"], ["slb", "https://slb-v1.api.fan"], ["www", "https://www.packyapi.com"]]) {
     assert.equal(inferBase(id), origin)
     assert.equal(inferBase(origin), origin)
     assert.equal(inferBase(origin + "/"), origin)

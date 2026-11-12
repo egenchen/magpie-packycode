@@ -52,8 +52,8 @@ The plugin options accept independent `config_endpoint` and `model_endpoint`
 URLs through `magpie plugin options magpie-packycode '<json>'`, so an existing
 sign-in can use `.ai` for console data and CF for models without signing in again.
 Both sign-in methods also offer the two
-selectors. Choose from `https://www.packyapi.ai`, `https://cf.api.fan` and
-`https://slb-v1.api.fan`. **CF is not recommended for configuration calls**: its
+selectors. Choose from `https://www.packyapi.ai`, `https://cf.api.fan`,
+`https://slb-v1.api.fan`, and `https://www.packyapi.com`. **CF is not recommended for configuration calls**: its
 `/api` endpoints currently return 404, although its `/v1` relay responds.
 
 ---
@@ -146,6 +146,7 @@ magpie plugin login packycode
     "https://www.packyapi.ai",
     "https://cf.api.fan",
     "https://slb-v1.api.fan",
+    "https://www.packyapi.com",
     "CF 不建议用作配置调用接口：/api 目前返回 404；模型调用接口仍可选 CF。"
   ]
 }
@@ -177,8 +178,9 @@ magpie plugin options magpie-packycode '{"config_endpoint":"https://www.packyapi
 | `https://www.packyapi.ai` | 可选 | 可选 |
 | `https://cf.api.fan` | **不建议选择**：目前配置接口返回 404 | 可选 |
 | `https://slb-v1.api.fan` | 可选；如返回空正文，可单独换配置接口 | 可选 |
+| `https://www.packyapi.com` | 可选；账号和价格表接口已验证 | 可选；带 Key 模型列表已验证 |
 
-这些值也接受短名 `ai`、`cf`、`slb`。保存后对插件的全部账号生效；Options 中未指定的选项，
+这些值也接受短名 `ai`、`cf`、`slb`、`www`。保存后对插件的全部账号生效；Options 中未指定的选项，
 沿用各账号登录时的设置。移除这两个选项可恢复账号自己的设置。
 
 两种登录方式也分别询问“模型调用接口”和“配置调用接口”；新的配置接口选择默认 `.ai`。

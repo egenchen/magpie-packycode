@@ -12,7 +12,6 @@ const HOSTS = {
   slb: "https://slb-v1.api.fan",
   cf: "https://cf.api.fan",
   ai: "https://www.packyapi.ai",
-  // Existing sign-ins may still name this host; it is not a new choice.
   www: "https://www.packyapi.com",
 }
 
@@ -20,12 +19,14 @@ export const ENDPOINTS = [
   { value: "slb", label: "优化线路 slb-v1.api.fan" },
   { value: "cf", label: "全球 cf.api.fan" },
   { value: "ai", label: "主站 www.packyapi.ai" },
+  { value: "www", label: "主站 www.packyapi.com" },
 ]
 
 export const CONSOLE_ENDPOINTS = [
   { value: "ai", label: "主站 www.packyapi.ai" },
   { value: "slb", label: "优化线路 slb-v1.api.fan" },
-  { value: "cf", label: "全球 cf.api.fan（不建议选择）", hint: "配置接口目前返回 404，建议使用 .ai 或 SLB" },
+  { value: "cf", label: "全球 cf.api.fan（不建议选择）", hint: "配置接口目前返回 404，建议使用 .ai 或 .com" },
+  { value: "www", label: "主站 www.packyapi.com" },
 ]
 
 export function inferBase(endpoint) {
