@@ -11,6 +11,7 @@
 | --- | --- |
 | 令牌多分组 | 令牌有 `group_mode: single/multi`，`groups` 是 JSON 数组串；多分组时站方在组间自选渠道 |
 | 分组倍率 | `/api/pricing` 的 `group_ratio`；模型级覆盖在 `model_group_ratio` |
+| 分组协议 | `model_group_endpoints[分组][模型]` 覆盖模型的总体协议列表；例如 `grok-sale/grok-4.7` 只支持 Responses |
 | 高峰计价 | `peak_active`（当前生效倍数）+ `peak_pricing`（规则，仅供展示） |
 | 实时性能 | `/api/perf-metrics` 公开给出每个模型每个分组的 24h 成功率/TTFT/TPS |
 | 请求日志 | `/api/log/self` 每条记录带 `group`、`channel`、`quota`，`other` 里是本次使用的 `group_ratio`/`model_ratio`/`completion_ratio` |
@@ -21,7 +22,7 @@
 ```
 POST /api/user/login                      需要滑块，插件不用
 GET  /api/user/self                       Authorization: Bearer <系统令牌> + New-Api-User: <数字 ID>
-GET  /api/token/search?p=0&size=100       返回完整 key、group、group_mode、groups
+GET  /api/token/search?p=0&size=100       返回令牌信息、group、group_mode、groups，不再返回完整 key
 POST /api/token/                          {name, group, unlimited_quota, expired_time:-1, ...}
                                           groups 若传必须是 JSON *字符串*；多分组模式要求 ≥2 组
 DELETE /api/token/{id}
@@ -98,7 +99,7 @@ quota 单位 = 500000 / 美元
 | 模型 `limit` 留 0 时，magpie 会用自己 catalog 里的窗口补齐 | 实测 Claude/GPT/Qwen 窗口都对 |
 | 插件 id 与用户已有自定义 provider 重名时，插件变成 `<id>-plugin` | 删掉同名的自定义 provider 后，模型 id 就是 `packycode/...` |
 | 插件跑在 Bun 里，`process.cwd()` 是 magpie 配置目录；`input.directory` 也是它 | 学习结果写 `~/.config/magpie/packycode-groups.json` |
-| 网关会把 Anthropic/Chat/Responses 互相翻译后交给插件 `fetch` | 上游协议按模型端点类型选 npm：Claude→anthropic，GPT→responses，其余→chat |
+| 网关会把 Anthropic/Chat/Responses 互相翻译后交给插件 `fetch` | 上游 npm 按最便宜可达分组的实际协议选择；模型总体协议不能替代分组覆盖 |
 
 ## 3. 备选方案与取舍
 
@@ -129,12 +130,21 @@ magpie 启动 / 每小时
 一次请求
   └─ fetch(url, init)
        ├─ 取 model
-       ├─ 候选 = 令牌 ∩ 分组 ∩ /v1/models ∩ 非受限
+       ├─ 候选 = 令牌 ∩ 分组 ∩ /v1/models ∩ 当前请求协议 ∩ 非受限
        ├─ GET /api/perf-metrics?model=X   分组健康（10 分钟缓存）
        ├─ 排序：健康过滤 → 价格 → 单分组优先 → 成功率
        ├─ 依次尝试（≤4）：替换 Authorization，失败按原因冷却后换下一个
        └─ 返回第一个 2xx（流式原样）
 ```
+
+模型目录先按可用 Key 选择最便宜的分组，再按该分组的协议声明 AI SDK。
+`model_group_endpoints` 缺失时沿用模型总体协议，显式空数组表示该分组不支持协议。
+`/v1/models` 提供非空协议列表时再取交集；空列表视为站方未提供协议信息。
+请求阶段从路径识别 Anthropic、Chat Completions 或 Responses，只选择支持该协议的分组，
+故障切换也遵循这一条件，避免把 Responses 请求交给仅支持 Chat 的备用分组。
+
+2026-11-13 回归新增 Grok 分组协议、目录/调用一致性、实时协议限制、多分组 Key 以及
+兼容协议故障切换的模拟测试。真实模型验收仅使用 Grok 与 Muse。
 
 ## 5. 验证记录
 

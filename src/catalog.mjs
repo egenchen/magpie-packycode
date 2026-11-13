@@ -9,7 +9,7 @@
 // signed in yet) the list is the price list's, unpriced by a key.
 
 import { allowedGroup } from "./groups.mjs"
-import { groupsByPrice, npmOf, priceOf, reasons, takesImages } from "./pricing.mjs"
+import { endpointsOf, groupsByPrice, npmOf, priceOf, reasons, takesImages } from "./pricing.mjs"
 import { orderFor } from "./router.mjs"
 
 const CHAT_ENDPOINTS = new Set(["anthropic", "openai", "openai-response"])
@@ -68,10 +68,8 @@ export function buildCatalog({ pricing, keys = [], opts = {}, liveKnown = false,
     if (m.quotaType === 1) continue // per call: an image or a video, not a chat
     if (!(m.ratio > 0)) continue
     if (!m.endpoints.some((e) => CHAT_ENDPOINTS.has(e))) continue
-    const npm = npmOf(m, m.family)
-    if (!npm) continue
-
     let group = null
+    let endpoints
     if (keys.length) {
       // the group the router would pick: cheapest group of a key that can
       // call it now, a key spanning several groups priced at its dearest
@@ -79,13 +77,24 @@ export function buildCatalog({ pricing, keys = [], opts = {}, liveKnown = false,
       const top = cands.find((c) => !c.skip)
       if (!top) continue
       group = top.group
+      endpoints = top.endpoints
     } else {
       if (liveKnown) continue
-      const groups = m.groups.filter((g) => allowedGroup(g, opts))
+      const groups = m.groups.filter((g) => allowedGroup(g, opts) && endpointsOf(pricing, m, g).some((e) => CHAT_ENDPOINTS.has(e)))
       if (!groups.length) continue
       group = groupsByPrice(pricing, m, groups)[0]
+      endpoints = endpointsOf(pricing, m, group)
     }
 
+    const npm = npmOf(m, m.family, endpoints)
+    if (!npm) continue
+    if (keys.length) {
+      const endpoint = npm === "@ai-sdk/anthropic" ? "anthropic" : npm === "@ai-sdk/openai" ? "openai-response" : "openai"
+      // Re-evaluate a multi-group key using only groups accepting this protocol.
+      const top = orderFor({ model: m.id, keys, pricing, perf: null, down: NO_DOWN, endpoint, opts }).find((c) => !c.skip)
+      if (!top) continue
+      group = top.group
+    }
     const price = group ? priceOf(pricing, m, group) : null
     const images = takesImages(m.family, m.id)
     fits.push({ m, npm, price, images })

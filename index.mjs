@@ -22,7 +22,7 @@ import { ENDPOINTS, CONSOLE_ENDPOINTS, inferBase, consoleBase } from "./src/pack
 import { buildCatalog } from "./src/catalog.mjs"
 import { orderFor, explain } from "./src/router.mjs"
 import { World } from "./src/world.mjs"
-import { classify, modelOf, signInError } from "./src/request.mjs"
+import { classify, endpointOf, modelOf, signInError } from "./src/request.mjs"
 import { usageOf } from "./src/usage.mjs"
 import { log, optionsOf } from "./src/options.mjs"
 import { noteFailure } from "./src/diag.mjs"
@@ -256,9 +256,10 @@ async function fetchOn(input, world, url, init) {
 
   const perf = await world.perfOf(model)
   const state = stateOfAccount(world)
-  const candidates = orderFor({ model, keys, pricing, perf, down: state.down, opts })
+  const endpoint = endpointOf(target.pathname)
+  const candidates = orderFor({ model, keys, pricing, perf, down: state.down, endpoint, opts })
   const usable = candidates.filter((c) => !c.skip)
-  if (!usable.length) throw new Error("PackyAPI: " + explain(model, candidates, pricing, keys))
+  if (!usable.length) throw new Error("PackyAPI: " + explain(model, candidates, pricing, keys, endpoint))
 
   const tries = usable.slice(0, Math.max(1, opts.maxTries ?? MAX_TRIES))
   let last = null

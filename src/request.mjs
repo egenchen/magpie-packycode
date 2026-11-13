@@ -1,5 +1,14 @@
 // How a request is read, and what its failure means for the next key.
 
+/** The relay protocol the host chose for this request. */
+export function endpointOf(pathname) {
+  return {
+    "/v1/messages": "anthropic",
+    "/v1/chat/completions": "openai",
+    "/v1/responses": "openai-response",
+  }[pathname]
+}
+
 /** the model a request names: in its body, else in its path. */
 export function modelOf(url, body) {
   if (typeof body === "string") {

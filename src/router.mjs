@@ -13,7 +13,7 @@
 //   4. cheapest first; when the price is equal, the key that pins a single
 //      group, then the healthier and faster one.
 
-import { multiplierOf, priceOf } from "./pricing.mjs"
+import { endpointsOf, multiplierOf, priceOf } from "./pricing.mjs"
 import { RESTRICTED } from "./groups.mjs"
 
 /** below this 24-hour success rate a group is skipped while another is left. */
@@ -29,7 +29,7 @@ export const MIN_SUCCESS = 88
  *   perf      Map<group, {success, ttft}> or null
  *   down      { keyed: Map<"key|model", until>, whole: Map<key, until> }
  */
-export function orderFor({ model, keys, pricing, perf, down, opts = {}, now = Date.now() }) {
+export function orderFor({ model, keys, pricing, perf, down, endpoint, opts = {}, now = Date.now() }) {
   const info = pricing?.models?.get(model)
   const wanted = new Set(info?.groups ?? [])
   const out = []
@@ -37,7 +37,12 @@ export function orderFor({ model, keys, pricing, perf, down, opts = {}, now = Da
   for (const k of keys ?? []) {
     if (!k?.key) continue
     if (k.live && !k.live.has(model)) continue
-    const serving = k.groups.filter((g) => !info || wanted.has(g))
+    const serving = k.groups.filter((g) => {
+      if (!info) return true
+      if (!wanted.has(g)) return false
+      const endpoints = endpointsOf(pricing, info, g, k)
+      return endpoint ? endpoints.includes(endpoint) : endpoints.some((e) => ["anthropic", "openai", "openai-response"].includes(e))
+    })
     if (!serving.length) continue
 
     // A key whose groups include a restricted pool cannot be pinned away
@@ -73,6 +78,7 @@ export function orderFor({ model, keys, pricing, perf, down, opts = {}, now = Da
       serving,
       group: chosen,
       groups: priced.map((x) => x.g),
+      endpoints: info ? endpointsOf(pricing, info, chosen || serving[0], k) : [],
       multiplier,
       price: price ?? null,
       multi,
@@ -115,7 +121,7 @@ function health(c) {
 }
 
 /** what to tell the user when no key can serve a model. */
-export function explain(model, candidates, pricing, keys) {
+export function explain(model, candidates, pricing, keys, endpoint) {
   const restricted = candidates.filter((c) => c.skip === "restricted")
   if (restricted.length) {
     const groups = [...new Set(restricted.flatMap((c) => c.serving).filter((g) => RESTRICTED[g]))]
@@ -124,5 +130,5 @@ export function explain(model, candidates, pricing, keys) {
   const known = pricing?.models?.get(model)
   if (!known) return `${model} is not in PackyAPI's price list`
   if (!keys.length) return `no PackyAPI key yet: sign in to PackyAPI, or paste keys`
-  return `no PackyAPI key serves ${model} right now (its groups: ${known.groups.join(", ")})`
+  return `no PackyAPI key serves ${model}${endpoint ? " over " + endpoint : ""} right now (its groups: ${known.groups.join(", ")})`
 }

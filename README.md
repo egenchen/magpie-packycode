@@ -281,6 +281,7 @@ magpie plugin options magpie-packycode '{"config_endpoint":"https://www.packyapi
 | 登录后显示 “PackyAPI refused the system access token” | 令牌或用户 ID 不对；用户 ID 是个人设置页顶部的数字（如 1234）。 |
 | 模型列表比控制台少 | `magpie` 只暴露前 24 个（按家族排序的后半段）；或该模型所属分组当前无可用渠道（维护中）。 |
 | `200 with an empty body` / 配置接口 404 | 在插件 Options 中修改 `config_endpoint`，无需修改 `model_endpoint`；CF 的配置接口不建议选择。 |
+| Grok 报“不支持 chat completions 协议” | 升级到支持分组协议的版本。`grok-sale` 的 Grok 可能仅支持 Responses，插件应按 `model_group_endpoints` 选择 SDK，并只在兼容协议的分组之间切换。 |
 | 请求报 “only on cc, codex…” | 该模型只在受限分组里；确认风险后打开 `include_restricted`。 |
 | 一直走贵的分组 | 便宜分组刚失败过、正在休息（60 秒内会自己回来，magpie 日志有 `warn` 记录原因）；或该分组的 key 还没建（看选项 `manage_keys`）；或分组从价目表下架且日志里还没出现过。 |
 | 网关频繁 429 | 插件对 `/api/*` 有退避重试；仍频繁出现说明请求量超过了站方限制。 |
