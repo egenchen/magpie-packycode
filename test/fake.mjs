@@ -71,7 +71,7 @@ export const LIVE = {
   image: [],
 }
 
-export function fakePackyAPI({ tokens = [], live = LIVE, perf = {}, self = {}, usage = [] } = {}) {
+export function fakePackyAPI({ tokens = [], live = LIVE, perf = {}, self = {}, usage = [], pricing = PRICING, protocols = {} } = {}) {
   const state = {
     tokens: tokens.map((t, i) => ({ id: t.id ?? i + 1, status: 1, expired_time: -1, unlimited_quota: true, ...t })),
     fail: new Map(), // key → { status, body, times }
@@ -99,7 +99,7 @@ export function fakePackyAPI({ tokens = [], live = LIVE, perf = {}, self = {}, u
 
     // ── console ──
     if (name === "/api/status") return json(200, { data: { quota_per_unit: 500000, price: 1 } })
-    if (name === "/api/pricing") return json(200, PRICING)
+    if (name === "/api/pricing") return json(200, pricing)
 
     if (name === "/api/perf-metrics") {
       const model = url.searchParams.get("model")
@@ -184,6 +184,9 @@ export function fakePackyAPI({ tokens = [], live = LIVE, perf = {}, self = {}, u
       for (const [k, v] of Object.entries(req.headers)) headers[k.toLowerCase()] = v
       state.requests.push({ path: name, key: auth, model: p.model, groups: t ? groupsOf(t) : [], headers })
       if (!t) return json(401, { error: { message: "bad key" } })
+      if (protocols[auth] && !protocols[auth].includes(name)) {
+        return json(400, { error: { message: `模型 ${p.model} 不支持 ${name} 协议` } })
+      }
       const f = state.fail.get(auth)
       if (f && f.times !== 0) {
         if (f.times > 0) f.times--

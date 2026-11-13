@@ -81,9 +81,18 @@ export function groupsByPrice(pricing, model, groups = model.groups) {
   })
 }
 
+/** Protocols a model accepts in this group, narrowed by the key's live list. */
+export function endpointsOf(pricing, model, group, key) {
+  const override = pricing.modelGroupEndpoints?.[group]?.[model.id]
+  const endpoints = Array.isArray(override) ? override : model.endpoints
+  const live = key?.live?.get(model.id)
+  // An empty live list means the relay omitted protocol information.
+  return live?.length ? endpoints.filter((e) => live.includes(e)) : endpoints
+}
+
 /** a model's endpoints as AI SDK packages magpie speaks. */
-export function npmOf(model, family) {
-  const eps = new Set(model.endpoints)
+export function npmOf(model, family, endpoints = model.endpoints) {
+  const eps = new Set(endpoints)
   // Claude is best spoken to on Anthropic's own API: thinking blocks, cache
   // controls and the rest survive a translated client that way.
   if (family === "claude" && eps.has("anthropic")) return "@ai-sdk/anthropic"
@@ -178,6 +187,7 @@ export function parsePricing(raw, { quotaPerUnit = 500000, usdPerUnit = 1, at = 
     groupRatio,
     usable,
     modelGroupRatio: raw?.model_group_ratio ?? {},
+    modelGroupEndpoints: raw?.model_group_endpoints ?? {},
     peakActive: raw?.peak_active ?? {},
     peakPricing: raw?.peak_pricing ?? { enabled: false, rules: [] },
     endpoints: raw?.supported_endpoint ?? {},

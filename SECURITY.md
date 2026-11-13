@@ -27,15 +27,19 @@
 
 ## 网络
 
-插件只访问 PackyAPI 自己的三个域名，代码里没有其它出站地址，`test/package.test.mjs` 会扫描
+插件只访问下列 PackyAPI 域名，代码里没有其它出站地址，`test/package.test.mjs` 会扫描
 运行时代码，出现别的 host 就测试失败：
 
 - `https://slb-v1.api.fan`（默认：推理 + 控制台）
 - `https://cf.api.fan`（推理，控制台接口不存在）
-- `https://www.packyapi.com`（推理 + 控制台）
+- `https://www.packyapi.ai`（可分别选择为推理或配置接口）
+- `https://www.packyapi.com`（可分别选择为推理或配置接口，沿用短名 `www`）
 
-登录方式里的“接口线路”是固定的三个选项；手工改配置文件填入未知主机时，代码会回落到默认主机，
-不会拿任意 URL 去发请求。
+“模型调用接口”和“配置调用接口”各有 `.ai` / CF / SLB / `.com` 四个选项。插件 Options 也可独立设置
+`model_endpoint` 和 `config_endpoint`，覆盖账号的登录设置；两者接受固定名单内的完整 HTTPS 根地址
+（可带末尾 `/`）或短名。未知主机、带账号信息或附加路径/查询串的地址会回落 SLB，不会发送到任意 URL。
+选择 CF 作配置接口仍按该选择调用，但界面标注“不建议选择”：它目前对 `/api` 返回 404。
+插件不会自动把控制台凭据切换到另一条线路。
 
 ## 系统访问令牌不经过第三方
 

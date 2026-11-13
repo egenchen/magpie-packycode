@@ -33,7 +33,7 @@ async function setup(opts = {}) {
     directory: dir,
     magpie: { options: () => opts.options ?? {} },
     client: { app: { log: (m) => logs.push(m) } },
-  })
+  }, opts.settings)
   return { plugin, fake, logs, dir }
 }
 
@@ -68,6 +68,82 @@ test("keys sign-in learns each key's groups, and the cheapest one serves", async
   assert.equal(res.status, 200)
   assert.equal(fake.state.requests.at(-1).key, "sk-cheap-aaaaaaaaaaaaaaaaa")
 })
+
+test("plugin settings select CF models and .ai config without signing in again", async () => {
+  const { plugin, fake } = await setup({
+    options: { manage_keys: true },
+    settings: JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8")).magpie.options,
+  })
+  const routed = globalThis.fetch
+  const seen = []
+  globalThis.fetch = (url, init) => {
+    seen.push({ url: new URL(String(url)), headers: new Headers(init?.headers) })
+    return routed(url, init)
+  }
+  // A sign-in saved before these settings existed still names SLB.
+  const auth = { type: "api", key: "test-system-token", metadata: { mode: "token", userID: "12345", endpoint: "slb" } }
+  const models = await plugin.provider.models({ models: {} }, { auth })
+  assert.ok(models["claude-x"])
+  assert.equal(models["claude-x"].api.url, "https://cf.api.fan/v1")
+  assert.equal((await plugin.auth.loader(async () => auth)).baseURL, "https://cf.api.fan/v1")
+  assert.equal((await call(plugin, auth, "claude-x")).status, 200)
+  assert.equal((await plugin.auth.usage(async () => auth)).balance, "$100.00")
+  assert.ok(fake.state.created.length > 0)
+  assert.ok(fake.state.requests.length > 0)
+  assert.ok(seen.some((r) => r.url.pathname === "/v1/models"))
+  assert.ok(seen.some((r) => r.url.pathname === "/api/token/search"))
+  for (const r of seen) {
+    if (r.url.pathname.startsWith("/api/")) assert.equal(r.url.origin, "https://www.packyapi.ai")
+    else {
+      assert.equal(r.url.origin, "https://cf.api.fan")
+      assert.notEqual(r.headers.get("authorization"), "Bearer test-system-token")
+    }
+  }
+
+  const loader = await plugin.auth.loader(async () => auth)
+  const before = seen.length
+  await assert.rejects(() => loader.fetch("https://www.packyapi.ai/v1/messages", { body: "{}" }), /refusing to send a key/)
+  assert.equal(seen.length, before, "even an allowed config host is not the selected model host")
+})
+
+test("changing only the account's config endpoint invalidates its cached data", async () => {
+  const { plugin } = await setup({ tokens: [{ key: "sk-test-relay-cheap", name: "c", group: "cheap" }] })
+  const routed = globalThis.fetch
+  const urls = []
+  globalThis.fetch = (url, init) => {
+    urls.push(new URL(String(url)))
+    return routed(url, init)
+  }
+  const auth = { type: "api", key: "sk-test-relay-cheap", metadata: { mode: "keys", endpoint: "cf", consoleEndpoint: "ai" } }
+  await plugin.provider.models({ models: {} }, { auth })
+  assert.ok(urls.some((u) => u.origin === "https://www.packyapi.ai" && u.pathname === "/api/pricing"))
+  urls.length = 0
+  auth.metadata.consoleEndpoint = "slb"
+  await plugin.provider.models({ models: {} }, { auth })
+  assert.ok(urls.some((u) => u.origin === "https://slb-v1.api.fan" && u.pathname === "/api/pricing"))
+  assert.ok(!urls.some((u) => u.origin === "https://www.packyapi.ai"))
+})
+
+for (const [settings, modelHost, configHost] of [
+  [{ model_endpoint: "https://www.packyapi.ai" }, "www.packyapi.ai", "slb-v1.api.fan"],
+  [{ config_endpoint: "https://www.packyapi.ai" }, "slb-v1.api.fan", "www.packyapi.ai"],
+]) {
+  test(`setting only ${Object.keys(settings)[0]} leaves the other endpoint unchanged`, async () => {
+    const { plugin } = await setup({ settings, tokens: [{ key: "sk-test-relay-cheap", name: "c", group: "cheap" }] })
+    const routed = globalThis.fetch
+    const seen = []
+    globalThis.fetch = (url, init) => {
+      seen.push(new URL(String(url)))
+      return routed(url, init)
+    }
+    const auth = { type: "api", key: "sk-test-relay-cheap", metadata: { mode: "keys", endpoint: "slb" } }
+    await plugin.provider.models({ models: {} }, { auth })
+    assert.equal((await call(plugin, auth, "claude-x")).status, 200)
+    assert.ok(seen.some((u) => u.pathname === "/api/pricing"))
+    assert.ok(seen.some((u) => u.pathname === "/v1/messages"))
+    for (const u of seen) assert.equal(u.host, u.pathname.startsWith("/api/") ? configHost : modelHost)
+  })
+}
 
 test("a group with no channel hands the request to the next one, and rests", async () => {
   const { plugin, fake, logs, dir } = await setup({

@@ -55,7 +55,8 @@ async function onceJSON(url, { method, headers, body, timeout, signal, fetchImpl
   try {
     return { value: JSON.parse(text) }
   } catch {
-    return { error: new Error(`${hostOf(url)} answered something that is not JSON: ${clip(text, 120)}`) }
+    const why = text.trim() ? `something that is not JSON: ${clip(text, 120)}` : "an empty body (expected JSON)"
+    return { error: new Error(`${hostOf(url)} answered ${res.status} with ${why}`) }
   }
 }
 
