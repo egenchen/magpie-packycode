@@ -296,6 +296,8 @@ const HTML = `<!doctype html>
   .chip { padding:2px 8px; border-radius:999px; border:1px solid var(--line); font-size:12px; color:var(--muted); }
   .chip b { color:var(--fg); font-weight:600; }
   .err { color:var(--bad); padding:16px; }
+  details.groups { margin-bottom:14px; }
+  details.groups summary { cursor:pointer; color:var(--muted); font-size:12px; margin-bottom:6px; }
 </style></head><body>
 <header>
   <h1>PackyCode 渠道看板</h1>
@@ -304,6 +306,10 @@ const HTML = `<!doctype html>
 </header>
 <main>
   <section class="pane">
+    <details class="groups" open>
+      <summary>渠道概览 <span class="muted" id="gcount"></span></summary>
+      <table id="groups"><thead><tr><th>渠道</th><th class="num">倍率</th><th>类型</th><th>Key</th><th class="num">在线模型</th></tr></thead><tbody></tbody></table>
+    </details>
     <input id="q" type="search" placeholder="搜索模型…（如 opus / sonnet / kimi）">
     <table id="models"><thead><tr>
       <th>模型</th><th>当前渠道</th><th class="num">倍率</th><th class="num">输入 $/1M</th><th class="num">输出 $/1M</th><th class="num">24h 成功率</th><th class="num">TTFT</th><th>状态</th>
@@ -347,7 +353,21 @@ function rows() {
     body.append(tr)
   }
 }
-function draw() { rows() }
+function draw() {
+  const gb = document.querySelector('#groups tbody')
+  gb.innerHTML = ''
+  for (const g of data.groups) {
+    const tr = document.createElement('tr')
+    tr.innerHTML = '<td>' + g.group + '</td>' +
+      '<td class="num">' + (g.mult == null ? '—' : g.mult + '×') + '</td>' +
+      '<td>' + (g.restricted ? '<span class="tag bad">受限</span>' : '<span class="tag ok">可用</span>') + '</td>' +
+      '<td>' + (g.hasKey ? '有' : '<span class="muted">无</span>') + '</td>' +
+      '<td class="num">' + (g.live == null ? '—' : g.live) + '</td>'
+    gb.append(tr)
+  }
+  $('#gcount').textContent = '（' + data.groups.length + ' 个渠道）'
+  rows()
+}
 $('#q').oninput = rows
 async function show(id) {
   const d = $('#detail')

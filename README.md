@@ -178,6 +178,8 @@ npm run dashboard            # 默认 http://127.0.0.1:3917
 PORT=4000 npm run dashboard  # 换端口
 ```
 
+![渠道看板](docs/dashboard.png)
+
 它读的东西和你关心的一致：
 
 - `/api/pricing`：每个模型在每个渠道的倍率与 `$/1M`；
