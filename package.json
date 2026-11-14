@@ -1,6 +1,6 @@
 {
   "name": "magpie-packycode",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "PackyAPI (packyapi.com / packycode) as a magpie provider: each request goes out on the cheapest token group that is working, with automatic failover and a balance/spend card",
   "type": "module",
   "main": "./index.mjs",
@@ -11,13 +11,15 @@
     "README.md",
     "DESIGN.md",
     "icon.svg",
-    "SECURITY.md"
+    "SECURITY.md",
+    "scripts"
   ],
   "scripts": {
     "test": "node --test test/*.test.mjs",
     "prices": "node scripts/prices.mjs",
     "live": "node scripts/live.mjs",
-    "live:plugin": "node scripts/live-plugin.mjs"
+    "live:plugin": "node scripts/live-plugin.mjs",
+    "dashboard": "node scripts/dashboard.mjs"
   },
   "keywords": [
     "opencode",
