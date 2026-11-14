@@ -9,7 +9,7 @@
 // signed in yet) the list is the price list's, unpriced by a key.
 
 import { allowedGroup } from "./groups.mjs"
-import { groupsByPrice, npmOf, priceOf, reasons, takesImages } from "./pricing.mjs"
+import { groupsByPrice, multiplierOf, npmOf, priceOf, reasons, takesImages } from "./pricing.mjs"
 import { orderFor } from "./router.mjs"
 
 const CHAT_ENDPOINTS = new Set(["anthropic", "openai", "openai-response"])
@@ -88,14 +88,25 @@ export function buildCatalog({ pricing, keys = [], opts = {}, liveKnown = false,
 
     const price = group ? priceOf(pricing, m, group) : null
     const images = takesImages(m.family, m.id)
-    fits.push({ m, npm, price, images })
+    // what the picker shows: the group this model would go out on, its
+    // multiplier, and the dearest allowed one struck through beside it
+    const allowed = m.groups
+      .filter((g) => allowedGroup(g, opts))
+      .map((g) => ({ g, mult: multiplierOf(pricing, m.id, g) }))
+      .filter((x) => x.mult != null)
+      .sort((a, b) => a.mult - b.mult)
+    const rate = group ? (allowed.find((x) => x.g === group)?.mult ?? 0) : 0
+    const dearest = allowed.length ? allowed[allowed.length - 1].mult : 0
+    const rateWas = dearest > rate ? dearest : 0
+    const name = prettyName(m.id, m.family) + (opts.show_group !== false && group ? ` · ${group}` : "")
+    fits.push({ m, npm, price, images, rate, rateWas, name })
   }
 
   const out = {}
   const byID = new Map(fits.map((f) => [f.m.id, f]))
   for (const m of pickerOrder(fits.map((f) => f.m))) {
-    const { npm, price, images } = byID.get(m.id)
-    out[m.id] = runtimeModel(m, { npm, price, images, base, name: prettyName(m.id, m.family) })
+    const { npm, price, images, rate, rateWas, name } = byID.get(m.id)
+    out[m.id] = runtimeModel(m, { npm, price, images, base, name, rate, rateWas })
   }
   return out
 }
@@ -168,11 +179,15 @@ export function prettyName(id, family) {
   return `${maker} ${body}`
 }
 
-function runtimeModel(m, { npm, price, images, base, name }) {
+function runtimeModel(m, { npm, price, images, base, name, rate = 0, rateWas = 0 }) {
   return {
     id: m.id,
     providerID: "packycode",
     name: name || m.id,
+    // magpie's model chip shows "2.8×" (and "7×" struck through) beside the
+    // name: the group's price multiplier this model goes out at
+    rate,
+    rateWas,
     api: { id: m.id, url: base, npm },
     status: "active",
     headers: {},
