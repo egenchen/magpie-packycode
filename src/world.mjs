@@ -11,6 +11,7 @@ import { PackyAPI } from "./packyapi.mjs"
 import { parsePricing, multiplierOf, groupsByPrice } from "./pricing.mjs"
 import { allowedGroup, NON_CHAT } from "./groups.mjs"
 import { loadMade, saveMade } from "./keys.mjs"
+import { loadSnapshot, saveSnapshot } from "./snapshot.mjs"
 import { applyKnown, learnFromLogs, loadKnown, rememberPricing, saveKnown } from "./known.mjs"
 
 const PREFIX = "magpie-"
@@ -41,9 +42,9 @@ export class World {
     this.learnedAt = 0
     this.api = new PackyAPI({ endpoint: this.endpoint, accessToken: this.accessToken, userID: this.userID, fetchImpl })
 
-    this.pricingCache = new Cache(10 * 60_000, () => this.loadPricing())
+    this.pricingCache = new Cache(30 * 60_000, () => this.loadPricing())
     this.statusCache = new Cache(60 * 60_000, () => this.api.status())
-    this.tokensCache = new Cache(5 * 60_000, () => (this.api.signedIn ? this.api.tokens() : []))
+    this.tokensCache = new Cache(15 * 60_000, () => (this.api.signedIn ? this.api.tokens() : []))
     this.liveCache = new Map() // group signature → Cache
     this.perfCache = new Map() // model → Cache
     this.created = new Map() // group → when a token was made, to not ask twice
@@ -70,7 +71,19 @@ export class World {
   // ── the price list ────────────────────────────────────────────────────
 
   async loadPricing() {
-    const [raw, status] = await Promise.all([this.api.pricing(), this.statusCache.soft().catch(() => null)])
+    let raw = null
+    let status = null
+    let live = false
+    try {
+      ;[raw, status] = await Promise.all([this.api.pricing(), this.statusCache.soft().catch(() => null)])
+      live = true
+    } catch (e) {
+      // Cloudflare's 1015, or any outage: keep routing on what last answered
+      const last = loadSnapshot(this.dir)
+      if (!last) throw e
+      raw = last.raw
+      status = last.status
+    }
     const d = status?.data ?? {}
     const pricing = parsePricing(raw, {
       quotaPerUnit: Number(d.quota_per_unit) || 500000,
@@ -83,6 +96,7 @@ export class World {
         "the console answered an empty price list — the console now lives on www.packyapi.com (through a proxy); pick \"全部走 www.packyapi.com\" as the endpoint if that host answers nothing either",
       )
     }
+    if (live) saveSnapshot(this.dir, raw, status)
     const learned = rememberPricing(this.known, pricing)
     if (learned && Date.now() - this.knownAt > 60 * 60_000) {
       this.knownAt = Date.now()
@@ -152,7 +166,21 @@ export class World {
   }
 
   async ensureKeys() {
-    const tokens = await this.tokensCache.get().catch(() => [])
+    let tokens = null
+    try {
+      tokens = await this.tokensCache.get()
+    } catch {
+      // the console is rate limited: the keys already made still work on the
+      // relay, so use them without asking whether their tokens are listed
+      return Object.entries(this.made).map(([group, rec]) => ({
+        key: rec.key,
+        id: rec.id,
+        name: rec.name || `magpie-${group}`,
+        groups: group.split(/[\s,]+/).filter(Boolean),
+        groupMode: "single",
+        source: "made",
+      }))
+    }
     const byID = new Map((tokens ?? []).map((t) => [t.id, t]))
     const keys = []
     let dropped = false

@@ -14,7 +14,9 @@ export async function json(url, { method = "GET", headers = {}, body, timeout = 
       if (out.error) throw out.error
       return out.value
     }
-    await new Promise((ok) => setTimeout(ok, out.wait ?? 400 * Math.pow(2, i)))
+    // Cloudflare's 1015 asks for a longer pause than a relay's 429
+    const base = out.rateLimited ? 3000 : 400
+    await new Promise((ok) => setTimeout(ok, out.wait ?? base * Math.pow(2, i)))
     lastErr = out.error
   }
   throw lastErr
@@ -48,9 +50,10 @@ async function onceJSON(url, { method, headers, body, timeout, signal, fetchImpl
   }
   if (!res.ok) {
     const err = new Error(`${hostOf(url)} answered ${res.status}${text ? ": " + clip(text, 200) : ""}`)
+    const rateLimited = res.status === 429 && /1015|rate limited|too many requests/i.test(text)
     const retry = res.status === 429 || res.status >= 500
     const wait = res.status === 429 ? Math.min(retryAfter(res.headers) || 600, 5000) : undefined
-    return { error: err, retry, wait }
+    return { error: err, retry, wait, rateLimited }
   }
   try {
     return { value: JSON.parse(text) }
