@@ -92,7 +92,7 @@ class ProxyAgent extends https.Agent {
 
 const agent = proxy ? new ProxyAgent({ keepAlive: true }) : null
 
-function getJSON(url, { token, timeout = 20000 } = {}) {
+function getJSON(url, { token, headers = {}, timeout = 20000 } = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(url)
     const req = https.request(
@@ -102,7 +102,7 @@ function getJSON(url, { token, timeout = 20000 } = {}) {
         path: u.pathname + u.search,
         method: "GET",
         agent,
-        headers: { accept: "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+        headers: { accept: "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}), ...headers },
         timeout,
       },
       (res) => {
@@ -237,6 +237,31 @@ async function buildOverview() {
   }
 }
 
+async function buildRecent() {
+  const { token, userID } = readAuth()
+  if (!token) throw new Error("no sign-in found")
+  const j = await cached("recent", 30_000, () =>
+    getJSON(CONSOLE + "/api/log/self?p=0&page_size=30&type=2", {
+      token,
+      headers: userID ? { "new-api-user": String(userID) } : {},
+    }),
+  )
+  return {
+    at: new Date().toISOString(),
+    items: (j?.data?.items ?? []).map((it) => ({
+      at: new Date((it.created_at ?? 0) * 1000).toISOString(),
+      model: it.model_name ?? "",
+      group: it.group ?? "",
+      channel: it.channel_name || (it.channel != null ? String(it.channel) : ""),
+      tokensIn: it.prompt_tokens ?? 0,
+      tokensOut: it.completion_tokens ?? 0,
+      quota: it.quota ?? 0,
+      ms: it.use_time ?? null,
+      stream: Boolean(it.is_stream),
+    })),
+  }
+}
+
 async function buildModel(name) {
   const { token } = readAuth()
   const raw = await cached("pricing", 120_000, () => getJSON(CONSOLE + "/api/pricing"))
@@ -296,6 +321,8 @@ const HTML = `<!doctype html>
   .chip { padding:2px 8px; border-radius:999px; border:1px solid var(--line); font-size:12px; color:var(--muted); }
   .chip b { color:var(--fg); font-weight:600; }
   .err { color:var(--bad); padding:16px; }
+  details.recent { margin-top:18px; border-top:1px solid var(--line); padding-top:10px; }
+  details.recent summary { cursor:pointer; color:var(--muted); font-size:12px; margin-bottom:6px; }
   details.groups { margin-bottom:14px; }
   details.groups summary { cursor:pointer; color:var(--muted); font-size:12px; margin-bottom:6px; }
 </style></head><body>
@@ -315,7 +342,13 @@ const HTML = `<!doctype html>
       <th>模型</th><th>当前渠道</th><th class="num">倍率</th><th class="num">输入 $/1M</th><th class="num">输出 $/1M</th><th class="num">24h 成功率</th><th class="num">TTFT</th><th>状态</th>
     </tr></thead><tbody></tbody></table>
   </section>
-  <section class="pane detail" id="detail"><div class="muted">选一个模型看它所有渠道。</div></section>
+  <section class="pane detail">
+    <div id="detail"><div class="muted">选一个模型看它所有渠道。</div></div>
+    <details open class="recent">
+      <summary>最近调用（实际渠道）</summary>
+      <table id="recent"><thead><tr><th>时间</th><th>模型</th><th>渠道</th><th>节点</th><th class="num">in/out</th><th class="num">耗时</th></tr></thead><tbody></tbody></table>
+    </details>
+  </section>
 </main>
 <script>
 let data = null
@@ -353,6 +386,27 @@ function rows() {
     body.append(tr)
   }
 }
+async function loadRecent() {
+  try {
+    const j = await (await fetch('/api/recent')).json()
+    if (j.error) throw new Error(j.error)
+    const tb = document.querySelector('#recent tbody')
+    tb.innerHTML = ''
+    for (const r of j.items) {
+      const tr = document.createElement('tr')
+      tr.innerHTML = '<td>' + new Date(r.at).toLocaleTimeString() + '</td>' +
+        '<td class="name" title="' + r.model + '">' + r.model + '</td>' +
+        '<td>' + (r.group || '—') + (r.stream ? ' <span class="tag">流</span>' : '') + '</td>' +
+        '<td class="muted">' + (r.channel || '—') + '</td>' +
+        '<td class="num">' + r.tokensIn + '/' + r.tokensOut + '</td>' +
+        '<td class="num">' + (r.ms == null ? '—' : (r.ms >= 1000 ? (r.ms / 1000).toFixed(1) + 's' : r.ms + 'ms')) + '</td>'
+      tb.append(tr)
+    }
+  } catch (e) {
+    document.querySelector('#recent tbody').innerHTML = '<tr><td colspan="6" class="err">' + e.message + '</td></tr>'
+  }
+}
+
 function draw() {
   const gb = document.querySelector('#groups tbody')
   gb.innerHTML = ''
@@ -390,10 +444,10 @@ async function show(id) {
       '<span class="chip">补全倍率 <b>' + (j.completion ?? '—') + '</b></span>' +
       '<span class="chip">渠道 <b>' + j.groups.length + '</b></span></div>' +
       '<table><thead><tr><th>渠道</th><th class="num">倍率</th><th class="num">输入 $/1M</th><th class="num">输出 $/1M</th><th>实时</th><th class="num">24h 成功率</th><th class="num">TTFT</th><th class="num">TPS</th></tr></thead><tbody>' + rows + '</tbody></table>' +
-      '<p class="muted">倍率 = 模型倍率 × 渠道倍率 × 高峰系数；在线 = 该渠道的 /v1/models 此刻是否列出这个模型。</p>'
+      '<p class="muted">倍率 = 模型倍率 × 渠道倍率 × 高峰系数；「当前」是按此刻可用性估算的，实际走的渠道见下面「最近调用」。</p>'
   } catch (e) { d.innerHTML = '<div class="err">' + e.message + '</div>' }
 }
-load(); setInterval(load, 60000)
+load(); loadRecent(); setInterval(load, 60000); setInterval(loadRecent, 30000)
 </script></body></html>`
 
 // ── serve ─────────────────────────────────────────────────────────────────
@@ -408,6 +462,7 @@ const server = http.createServer(async (req, res) => {
     if (u.pathname === "/") return send(200, HTML, "text/html; charset=utf-8")
     if (u.pathname === "/api/data") return send(200, await buildOverview())
     if (u.pathname === "/api/model") return send(200, await buildModel(u.searchParams.get("name") || ""))
+    if (u.pathname === "/api/recent") return send(200, await buildRecent())
     send(404, { error: "not found" })
   } catch (e) {
     send(500, { error: String(e?.message ?? e) })

@@ -118,12 +118,6 @@ export async function PackycodeAuthPlugin(input) {
           default: false,
         },
         {
-          key: "show_group",
-          label: "在模型名后显示分组",
-          description: "模型名后加「· 分组名」，配合模型旁的倍率标签，直接看出这个模型现在走哪个渠道、什么价。",
-          default: true,
-        },
-        {
           key: "prefer_speed",
           label: "速度优先",
           description: "关：最便宜优先。开：先比 24 小时成功率和首字延迟，再看价格。",

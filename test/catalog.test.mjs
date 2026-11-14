@@ -92,7 +92,7 @@ test("a flagship cannot be pushed off the end of magpie's 24 by vendor order", (
   // the chip says which group answers and at what multiple, and the dearer
   // allowed group is struck through beside it
   assert.equal(cat["claude-opus-5-5"].rate, 0.5)
-  assert.match(cat["claude-opus-5-5"].name, / · cheap$/)
+  assert.equal(cat["claude-opus-5-5"].name, "Claude Opus 5.5")
   assert.ok(ids.indexOf("claude-opus-5-5") < 24, "and is inside the 24 magpie exposes")
   assert.ok(ids.indexOf("claude-sonnet-5-5") < 24)
   assert.ok(ids.indexOf("gpt-6.1-sol") < 24)

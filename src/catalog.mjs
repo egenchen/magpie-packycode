@@ -98,7 +98,7 @@ export function buildCatalog({ pricing, keys = [], opts = {}, liveKnown = false,
     const rate = group ? (allowed.find((x) => x.g === group)?.mult ?? 0) : 0
     const dearest = allowed.length ? allowed[allowed.length - 1].mult : 0
     const rateWas = dearest > rate ? dearest : 0
-    const name = prettyName(m.id, m.family) + (opts.show_group !== false && group ? ` · ${group}` : "")
+    const name = prettyName(m.id, m.family)
     fits.push({ m, npm, price, images, rate, rateWas, name })
   }
 
