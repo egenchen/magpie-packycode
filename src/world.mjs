@@ -76,6 +76,13 @@ export class World {
       quotaPerUnit: Number(d.quota_per_unit) || 500000,
       usdPerUnit: Number(d.price) || 1,
     })
+    if (!pricing.models.size) {
+      // slb's /api answers 200 with an empty body since the console moved;
+      // say so rather than let the picker end up with no models
+      throw new Error(
+        "the console answered an empty price list — the console now lives on www.packyapi.com (through a proxy); pick \"全部走 www.packyapi.com\" as the endpoint if that host answers nothing either",
+      )
+    }
     const learned = rememberPricing(this.known, pricing)
     if (learned && Date.now() - this.knownAt > 60 * 60_000) {
       this.knownAt = Date.now()

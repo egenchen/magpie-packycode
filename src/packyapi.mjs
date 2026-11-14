@@ -2,9 +2,10 @@
 // and the numeric user id in New-Api-User) and the relay under /v1 (needs an
 // API key, which is a token bound to one or more groups).
 //
-// cf.api.fan serves only /v1; slb-v1.api.fan and www.packyapi.com serve
-// both. www.packyapi.ai answers /api with a Cloudflare block, so it is not
-// a console host here.
+// The two faces sit on different hosts since the console moved (Nov 2026):
+// slb-v1.api.fan and cf.api.fan still answer /v1, but their /api paths now
+// return empty bodies; www.packyapi.com answers /api and /v1 alike. www is
+// reachable through the proxy the plugin host runs with.
 
 import { json } from "./http.mjs"
 
@@ -14,20 +15,23 @@ const HOSTS = {
   www: "https://www.packyapi.com",
 }
 
+// which host answers each endpoint's console and relay calls
+const CONSOLE = { slb: "www", cf: "www", www: "www" }
+const RELAY = { slb: "slb", cf: "cf", www: "www" }
+
 export const ENDPOINTS = [
-  { value: "slb", label: "优化线路 slb-v1.api.fan（推荐）" },
-  { value: "cf", label: "全球 cf.api.fan" },
-  { value: "www", label: "主站 www.packyapi.com" },
+  { value: "slb", label: "推荐：控制台 www + 推理 slb-v1.api.fan" },
+  { value: "cf", label: "控制台 www + 推理 cf.api.fan" },
+  { value: "www", label: "全部走 www.packyapi.com（需要代理）" },
 ]
 
 export function inferBase(endpoint) {
-  return HOSTS[endpoint] ?? HOSTS.slb
+  return HOSTS[RELAY[endpoint]] ?? HOSTS.slb
 }
 
-/** where the console API is: the same host, but cf has no console. */
+/** where the console API is: www, whichever relay the endpoint chooses. */
 export function consoleBase(endpoint) {
-  const e = endpoint === "cf" ? "slb" : endpoint
-  return HOSTS[e] ?? HOSTS.slb
+  return HOSTS[CONSOLE[endpoint]] ?? HOSTS.www
 }
 
 const ua = "magpie-packycode/0.1 (+magpie plugin)"
